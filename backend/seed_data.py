@@ -108,15 +108,15 @@ def seed(db):
         ("dma", "State DMA Officer", "dma@ner-ews.gov.in", "dma123", "Disaster Management Authority", "NER SDMA"),
         ("officer", "Field Officer", "officer@ner-ews.gov.in", "officer123", "Field Officer", "District Emergency Ops"),
         ("citizen", "Community Reporter", "citizen@ner-ews.gov.in", "citizen123", "Citizen", "Public"),
-        # User-specified team email accounts
-        ("epsita", "Epsita Maity", "epsitamaity629@gmail.com", "password123", "Admin", "NER Land Risk Disaster Command"),
+        # User-specified team email accounts (epsita & soumya designated as Admin)
+        ("epsita", "Epsita Maity", "epsitamaity629@gmail.com", "password123", "Admin", "NER Land Risk Admin Directorate"),
+        ("soumya", "Soumya Saha", "soumyasaha205@gmail.com", "password123", "Admin", "NER Land Risk Admin Directorate"),
         ("sanjana", "Sanjana Jana", "sanjanajana464@gmail.com", "password123", "Disaster Management Authority", "State DMA Control Room"),
-        ("soumya", "Soumya Saha", "soumyasaha205@gmail.com", "password123", "Field Officer", "Geotech & Sensor Engineering"),
         ("ananya", "Ananya Patra", "patraananya37@gamil.com", "password123", "Field Officer", "GIS & Satellite Mapping"),
         ("monira", "Monira Protappur", "monira.protappur@gmail.com", "password123", "Citizen", "Community Public Watch"),
     ]
 
-    # Ensure all users exist
+    # Ensure all users exist and admin roles are synchronized
     for u, fn, em, pw, role, org in users:
         existing = db.query(User).filter((User.username == u) | (User.email == em)).first()
         if not existing:
@@ -130,6 +130,10 @@ def seed(db):
                     organization=org,
                 )
             )
+        else:
+            if em.lower() in ["epsitamaity629@gmail.com", "soumyasaha205@gmail.com"] and existing.role != "Admin":
+                existing.role = "Admin"
+                existing.organization = "NER Land Risk Admin Directorate"
 
     if not db.query(SystemSetting).first():
         db.add(SystemSetting())

@@ -73,6 +73,18 @@ export const TRANSLATIONS = {
     aiImageAnalysisTitle: "AI Computer Vision Image Triage",
     confidence: "Prediction Confidence",
     
+    // Richter Scale, Flowchart, Previous & Upcoming Hazards
+    richterScaleTitle: "Richter Scale & Seismic Intensity Meter",
+    flowchartTitle: "Cascading Multi-Hazard Risk Flowchart",
+    previousFloods: "Previous Floods Archive",
+    previousLandslides: "Previous Landslides Archive",
+    previousLandrisks: "Previous Land Risk & Subsidence",
+    upcomingFlood: "Upcoming Flood Prediction",
+    upcomingLandslide: "Upcoming Landslide Prediction",
+    upcomingLandrisk: "Upcoming Land Risk & Soil Instability",
+    adminPanel: "Admin Command Directorate",
+    userPanel: "Citizen Public Portal",
+
     // Reporting
     submitReportTitle: "Geo-Tagged Citizen & Field Officer Incident Report",
     offlineBadge: "Offline Mode Active (Reports queued locally)",
@@ -138,6 +150,18 @@ export const TRANSLATIONS = {
     routeAnalysis: "রুট রিস্ক অ্যানালাইসিস (Route Risk)",
     origin: "শুরুর স্থান (Origin)",
     destination: "গন্তব্য (Destination)",
+
+    // Richter Scale, Flowchart, Previous & Upcoming Hazards
+    richterScaleTitle: "রিখটার স্কেল ও ভূকম্পন তীব্রতা ডায়াগ্রাম",
+    flowchartTitle: "ক্যাসকেডিং মাল্টি-হ্যাজার্ড ফ্লোচার্ট",
+    previousFloods: "পূর্ববর্তী বন্যার ইতিহাস",
+    previousLandslides: "পূর্ববর্তী ভূমিধসের ইতিহাস",
+    previousLandrisks: "পূর্ববর্তী ভূ-ঝুঁকি ও ভূমিক্ষয়",
+    upcomingFlood: "আসন্ন বন্যা পূর্বাভাস",
+    upcomingLandslide: "আসন্ন ভূমিধস পূর্বাভাস",
+    upcomingLandrisk: "আসন্ন ভূ-ঝুঁকি ও ভূমিক্ষয় পূর্বাভাস",
+    adminPanel: "অ্যাডমিন কমান্ড ডিরেক্টরেট",
+    userPanel: "সিটিজেন পাবলিক পোর্টাল",
     analyzeRouteBtn: "রুট করিডোর বিশ্লেষণ করুন",
     highRiskZones: "রুটের ঝুঁকিপূর্ণ জোনসমূহ",
     corridorStatus: "করিডোর অবস্থা",

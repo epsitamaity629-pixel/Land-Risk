@@ -24,6 +24,9 @@ class RegisterIn(BaseModel):
     organization: str = "Public"
 
 
+ADMIN_EMAILS = {"epsitamaity629@gmail.com", "soumyasaha205@gmail.com"}
+
+
 @router.post("/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
     identifier = body.username.strip()
@@ -39,6 +42,13 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid username/email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is deactivated. Contact Administrator.")
+    
+    # Auto-ensure designated admin emails have Admin role
+    if user.email and user.email.lower() in ADMIN_EMAILS and user.role != "Admin":
+        user.role = "Admin"
+        db.commit()
+        db.refresh(user)
+
     token = create_access_token({"sub": user.username, "role": user.role})
     return {
         "access_token": token,
@@ -56,25 +66,31 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 @router.post("/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    if body.role not in ROLES:
-        raise HTTPException(status_code=400, detail=f"Invalid role. Choose from: {', '.join(ROLES)}")
-    
     clean_username = body.username.strip()
     clean_email = body.email.strip().lower()
-    
+
     if db.query(User).filter(
         (func.lower(User.username) == clean_username.lower())
         | (func.lower(User.email) == clean_email)
     ).first():
         raise HTTPException(status_code=409, detail="Username or email already registered")
-        
+
+    # Designated emails automatically become System Admins with Admin Panel access
+    if clean_email in ADMIN_EMAILS:
+        assigned_role = "Admin"
+        assigned_org = body.organization.strip() if body.organization else "NER Land Risk Disaster Command Directorate"
+    else:
+        # All other standard registrations get Citizen/User role
+        assigned_role = "Citizen" if body.role == "Admin" else (body.role if body.role in ROLES else "Citizen")
+        assigned_org = body.organization.strip() if body.organization else "Public / Citizen User"
+
     user = User(
         username=clean_username,
         full_name=body.full_name.strip(),
         email=clean_email,
         hashed_password=hash_password(body.password),
-        role=body.role,
-        organization=body.organization.strip() if body.organization else "Public",
+        role=assigned_role,
+        organization=assigned_org,
         is_active=True,
     )
     db.add(user)
@@ -104,7 +120,17 @@ def demo_users():
             "full_name": "Epsita Maity",
             "password": "password123",
             "role": "Admin",
-            "label": "Epsita Maity (Admin)",
+            "label": "Epsita Maity (Admin Command)",
+            "panel": "Admin Panel",
+        },
+        {
+            "username": "soumya",
+            "email": "soumyasaha205@gmail.com",
+            "full_name": "Soumya Saha",
+            "password": "password123",
+            "role": "Admin",
+            "label": "Soumya Saha (Admin Command)",
+            "panel": "Admin Panel",
         },
         {
             "username": "sanjana",
@@ -112,23 +138,8 @@ def demo_users():
             "full_name": "Sanjana Jana",
             "password": "password123",
             "role": "Disaster Management Authority",
-            "label": "Sanjana Jana (DMA)",
-        },
-        {
-            "username": "soumya",
-            "email": "soumyasaha205@gmail.com",
-            "full_name": "Soumya Saha",
-            "password": "password123",
-            "role": "Field Officer",
-            "label": "Soumya Saha (Field Officer)",
-        },
-        {
-            "username": "ananya",
-            "email": "patraananya37@gamil.com",
-            "full_name": "Ananya Patra",
-            "password": "password123",
-            "role": "Field Officer",
-            "label": "Ananya Patra (Field Officer)",
+            "label": "Sanjana Jana (DMA Control)",
+            "panel": "Operations Panel",
         },
         {
             "username": "monira",
@@ -136,7 +147,8 @@ def demo_users():
             "full_name": "Monira Protappur",
             "password": "password123",
             "role": "Citizen",
-            "label": "Monira Protappur (Citizen)",
+            "label": "Monira Protappur (Citizen User)",
+            "panel": "User Panel",
         },
         {
             "username": "admin",
@@ -145,30 +157,16 @@ def demo_users():
             "password": "admin123",
             "role": "Admin",
             "label": "Default Admin",
-        },
-        {
-            "username": "dma",
-            "email": "dma@ner-ews.gov.in",
-            "full_name": "State DMA Officer",
-            "password": "dma123",
-            "role": "Disaster Management Authority",
-            "label": "Default DMA",
-        },
-        {
-            "username": "officer",
-            "email": "officer@ner-ews.gov.in",
-            "full_name": "Field Officer",
-            "password": "officer123",
-            "role": "Field Officer",
-            "label": "Default Officer",
+            "panel": "Admin Panel",
         },
         {
             "username": "citizen",
             "email": "citizen@ner-ews.gov.in",
-            "full_name": "Community Reporter",
+            "full_name": "Community Citizen",
             "password": "citizen123",
             "role": "Citizen",
-            "label": "Default Citizen",
+            "label": "Default Citizen User",
+            "panel": "User Panel",
         },
     ]
 

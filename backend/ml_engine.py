@@ -699,13 +699,57 @@ async def predict_for_location_query(query: str = "", lat: Optional[float] = Non
     ]
     risk_trend = matched_place.get("risk_trend", default_trend) if matched_place else default_trend
 
-    # Natural Language AI Explanation
+    # Richter Scale Seismic Profile & Co-Seismic Hazard
+    seismic_profile = weather_service.calculate_seismic_richter_profile(
+        lat=target_lat,
+        lon=target_lon,
+        elevation=elev,
+        slope=slope,
+        state=state,
+        name=place_name,
+    )
+
+    # Categorized Previous Disasters (Previous Floods, Previous Landslides, Previous Land Risks)
+    categorized_history = weather_service.generate_categorized_past_records(
+        nearest=matched_place or geomorph,
+        lat=target_lat,
+        lon=target_lon,
+        elevation=elev,
+        slope=slope,
+        state=state,
+        name=place_name,
+    )
+
+    # Interactive Cascading Disaster Flowchart Data
+    cascading_flowchart = weather_service.generate_cascading_hazard_flowchart(
+        location_name=place_name,
+        state=state,
+        slope=slope,
+        elevation=elev,
+        rain_24h=meteo["rainfall_24h_mm"],
+        seismic=seismic_profile,
+        flood_score=fl_score,
+        landslide_score=ls_score,
+    )
+
+    # Upcoming Multi-Hazard Predictions (Upcoming Flood, Upcoming Landslide, Upcoming Land Risk)
+    upcoming_predictions = weather_service.generate_upcoming_hazard_predictions(
+        ls_score=ls_score,
+        fl_score=fl_score,
+        slope=slope,
+        elevation=elev,
+        meteo=meteo,
+        seismic=seismic_profile,
+    )
+
+    # Natural Language AI Explanation Synthesis
     top_ls_factors = prediction["landslide"]["explainability"][:2]
     top_fl_factors = prediction["flood"]["explainability"][:2]
     ai_summary_explanation = (
-        f"{top_ls_factors[0]['factor']} ({top_ls_factors[0]['contribution_pct']}%) and "
-        f"{top_ls_factors[1]['factor']} ({top_ls_factors[1]['contribution_pct']}%) are the primary geotechnical triggers for current landslide susceptibility. "
-        f"For flood hazard, {top_fl_factors[0]['factor']} ({top_fl_factors[0]['contribution_pct']}%) is the predominant driver of river basin inundation."
+        f"AI Multi-Hazard Synthesis for {place_name} ({state}): "
+        f"Primary geotechnical trigger is {top_ls_factors[0]['factor']} ({top_ls_factors[0]['contribution_pct']}%) with slope gradient {slope}°. "
+        f"Hydrological flood driver is {top_fl_factors[0]['factor']} ({top_fl_factors[0]['contribution_pct']}%) in {river_name}. "
+        f"Seismic risk: {seismic_profile['seismic_zone'][:12]} with co-seismic threshold at M ≥ {seismic_profile['coseismic_threshold_richter']} Richter."
     )
 
     # Actionable Directives & Safety
@@ -716,6 +760,8 @@ async def predict_for_location_query(query: str = "", lat: Optional[float] = Non
     if fl_score >= 60:
         evacuation_directives.append(f"Move livestock and property to high-ground elevated platforms away from {river_name}.")
         evacuation_directives.append("Activate community early warning sirens and deploy NDRF rescue boats.")
+    if seismic_profile.get("coseismic_vulnerability_score", 0) >= 60:
+        evacuation_directives.append("Inspect masonry retaining walls for co-seismic tension cracks.")
     if not evacuation_directives:
         evacuation_directives.append("Conditions currently within normal thresholds. Continuous IoT telemetry active.")
 
@@ -739,6 +785,8 @@ async def predict_for_location_query(query: str = "", lat: Optional[float] = Non
             "overall_status": "CRITICAL" if overall_risk_score >= 75 else "HIGH" if overall_risk_score >= 55 else "MODERATE" if overall_risk_score >= 35 else "LOW",
             "flood_score": fl_score,
             "landslide_score": ls_score,
+            "land_risk_score": upcoming_predictions["upcoming_landrisk"]["prob_24h"],
+            "seismic_score": seismic_profile["coseismic_vulnerability_score"],
             "road_vulnerability_score": road_vuln_score,
             "population_exposure_score": exposure_score,
         },
@@ -757,6 +805,10 @@ async def predict_for_location_query(query: str = "", lat: Optional[float] = Non
                 "risk_tier": "Very High/Critical" if ls_prob_24h >= 75 else "High" if ls_prob_24h >= 55 else "Medium" if ls_prob_24h >= 35 else "Low",
             }
         },
+        "seismic_richter_profile": seismic_profile,
+        "categorized_history": categorized_history,
+        "cascading_flowchart": cascading_flowchart,
+        "upcoming_predictions": upcoming_predictions,
         "exposure": exposure_data,
         "emergency_priority": emergency_priority,
         "forecast_matrix_7d": forecast_matrix_7d,
@@ -767,8 +819,7 @@ async def predict_for_location_query(query: str = "", lat: Optional[float] = Non
         "early_warning_sms_template": (
             f"[NER-EWS ALERT] {place_name.upper()} ({state}): "
             f"Overall Risk {overall_risk_score}/100. "
-            f"Landslide Risk {ls_score}/100 ({prediction['landslide']['risk_level']}), "
-            f"Flood Threat {fl_score}/100 ({prediction['flood']['risk_level']}). "
+            f"Landslide: {ls_score}/100, Flood: {fl_score}/100, Seismic Zone: {seismic_profile['seismic_zone'][:8]}, Richter Co-Seismic Limit: M{seismic_profile['coseismic_threshold_richter']}. "
             f"24h Rain: {meteo['rainfall_24h_mm']}mm. Directive: {evacuation_directives[0]}"
         ),
     }
