@@ -48,3 +48,37 @@ def test_location_query_prediction():
     assert len(res["past_records"]) > 0
     assert res["prediction"]["flood"]["risk_score"] >= 0
     assert len(res["evacuation_directives"]) > 0
+
+
+def test_ai_disaster_report_and_simulation():
+    res = asyncio.run(ml_engine.predict_for_location_query("Shillong"))
+    report = ml_engine.generate_ai_disaster_intelligence_report(res)
+    assert "report_id" in report
+    assert "situation_summary" in report
+    assert "risk_assessment" in report
+    assert "early_warning" in report
+    assert len(report["recommended_actions"]) > 0
+    assert "disclaimer" in report["potential_impact"]
+
+    sim = ml_engine.simulate_what_if_scenario(res, rainfall_delta_pct=50.0, soil_moisture_delta_pct=20.0)
+    assert "simulated" in sim
+    assert "deltas" in sim
+    assert sim["simulated"]["rainfall_24h_mm"] >= sim["baseline"]["rainfall_24h_mm"]
+    assert "ai_simulation_verdict" in sim
+
+
+def test_ai_chat_assistant_and_comparison():
+    chat_res = asyncio.run(ml_engine.chat_disaster_assistant("Is Shillong safe today?"))
+    assert "reply" in chat_res
+    assert len(chat_res["suggested_prompts"]) > 0
+
+    comp = asyncio.run(ml_engine.compare_locations_data("Shillong", "Gangtok"))
+    assert "location_a" in comp
+    assert "location_b" in comp
+    assert "verdict" in comp
+    assert "comparison_metrics" in comp
+
+    indices = ml_engine.get_regional_risk_indices()
+    assert "ner_disaster_index" in indices
+    assert len(indices["ner_states"]) == 8
+

@@ -41,3 +41,30 @@ export const analyzeRouteRisk = (origin, destination) =>
 export const analyzeIncidentImage = (formData) =>
   post("/api/incidents/analyze-image", formData);
 
+export const generateAIReport = (query, location_data) =>
+  post("/api/ai/report", { query, location_data });
+
+export const simulateScenario = (payload) =>
+  post("/api/ai/simulate", payload);
+
+export const chatWithAIAssistant = (message, context_location, location_data) =>
+  post("/api/ai/chat", { message, context_location, location_data });
+
+export const compareLocations = (location_a, location_b) =>
+  post("/api/predict/compare", { location_a, location_b });
+
+export const getRegionalRiskIndices = () =>
+  get("/api/ner/risk-indices");
+
+
+
+// ─── Earthquake / Seismic ───────────────────────────────────────────────────
+export const getEarthquakeProfile = (query, latitude, longitude) =>
+  post("/api/earthquake/profile", { query, latitude, longitude });
+
+// ─── NER enhanced indices ───────────────────────────────────────────────────
+export const getNERRiskIndices = () => get("/api/ner/risk-indices");
+
+// ─── Authority / Admin ──────────────────────────────────────────────────────
+export const getMLMetrics = () => get("/api/ml/metrics");
+export const getStateAnalytics = () => get("/api/dashboard/state-analytics");

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   MapPin,
@@ -15,6 +16,7 @@ import {
   Share2,
   Radio,
   FileSpreadsheet,
+  FileText,
   AlertCircle,
   TrendingUp,
   Users,
@@ -54,15 +56,27 @@ import {
 import { searchLocationAndPredict, getGazetteer, analyzeRouteRisk } from "../api";
 import { useAuth } from "../AuthContext";
 import RiskGauge from "./RiskGauge";
+import AIDisasterReportModal from "./AIDisasterReportModal";
+import WhatIfSimulator from "./WhatIfSimulator";
+import AIChatAssistant from "./AIChatAssistant";
 
 export default function LocationRiskSearch({ onLocationSelected = null }) {
   const { t } = useAuth();
+  const navigate = useNavigate();
   
   // Tab Mode: 'location' or 'route'
   const [activeTab, setActiveTab] = useState("location");
 
+  // Region Mode: 'all' | 'ner' | 'pan_india'
+  const [regionMode, setRegionMode] = useState("all");
+
+  // Modals & Panels
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [showSimulator, setShowSimulator] = useState(false);
+  const [isVoiceSearching, setIsVoiceSearching] = useState(false);
+
   // Location search state
-  const [query, setQuery] = useState("Darjeeling");
+  const [query, setQuery] = useState("Shillong");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -83,9 +97,10 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
   const [routeResult, setRouteResult] = useState(null);
 
   useEffect(() => {
-    handleSearch("Darjeeling");
+    handleSearch("Shillong");
     handleRouteAnalyze("Siliguri", "Gangtok");
   }, []);
+
 
   const handleQueryChange = async (val) => {
     setQuery(val);
@@ -133,6 +148,31 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
     } finally {
       setRouteLoading(false);
     }
+  };
+
+  const toggleVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice recognition is not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+    if (isVoiceSearching) {
+      setIsVoiceSearching(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceSearching(true);
+    recognition.onend = () => setIsVoiceSearching(false);
+    recognition.onerror = () => setIsVoiceSearching(false);
+    recognition.onresult = (event) => {
+      const speechResult = event.results[0][0].transcript;
+      setQuery(speechResult);
+      handleSearch(speechResult);
+    };
+    recognition.start();
   };
 
   const handleUseGPS = () => {
@@ -196,26 +236,54 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
     { subject: "Exposure Index", score: scorecard?.population_exposure_score || 35, fullMark: 100 },
   ];
 
+  const NER_CHIPS = [
+    { name: "🏔️ Shillong (Meghalaya)", q: "Shillong" },
+    { name: "⛰️ Gangtok (Sikkim)", q: "Gangtok" },
+    { name: "🏞️ Guwahati (Assam)", q: "Guwahati" },
+    { name: "🌲 Itanagar (Arunachal)", q: "Itanagar" },
+    { name: "🌿 Aizawl (Mizoram)", q: "Aizawl" },
+    { name: "🪵 Kohima (Nagaland)", q: "Kohima" },
+    { name: "🌄 Imphal (Manipur)", q: "Imphal" },
+    { name: "🏛️ Agartala (Tripura)", q: "Agartala" },
+    { name: "🏔️ Mangan (Sikkim)", q: "Mangan" },
+    { name: "🌧️ Cherrapunji (Meghalaya)", q: "Cherrapunji" },
+  ];
+
+  const PAN_INDIA_CHIPS = [
+    { name: "🏔️ Darjeeling (WB)", q: "Darjeeling" },
+    { name: "⚡ Kedarnath (UK)", q: "Kedarnath" },
+    { name: "🚜 Joshimath (UK)", q: "Joshimath" },
+    { name: "🌿 Wayanad (Kerala)", q: "Wayanad" },
+    { name: "🌲 Shimla (HP)", q: "Shimla" },
+    { name: "🏔️ Manali (HP)", q: "Manali" },
+    { name: "🏙️ Kolkata (WB)", q: "Kolkata" },
+    { name: "🌊 Mumbai (MH)", q: "Mumbai" },
+    { name: "🏞️ Siliguri (WB)", q: "Siliguri" },
+    { name: "🏛️ Delhi NCR", q: "Delhi" },
+  ];
+
+  const DISPLAY_CHIPS = regionMode === "ner" ? NER_CHIPS : regionMode === "pan_india" ? PAN_INDIA_CHIPS : [...NER_CHIPS.slice(0, 5), ...PAN_INDIA_CHIPS.slice(0, 5)];
+
   return (
     <div className="space-y-6">
-      {/* Search Header Banner - Clean White Professional Style */}
+      {/* Search Header Banner - Command Center Style */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-1">
               <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>AI Multi-Hazard Intelligence & Geotechnical EWS</span>
+              <span>Bhu-Surakha · Multi-Hazard Geo-Spatial Early Warning Platform</span>
             </div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-              Location Multi-Hazard Risk Intelligence
+              Location Disaster Risk & Early Warning Intelligence
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Real-time AI terrain analysis, Richter scale seismic intensity, previous flood/landslide history, cascading risk flowcharts & upcoming predictions.
+              Search any location in India — state, district, city, village, or coordinates. Real-time AI terrain analysis, Richter scale seismology & historical disaster timelines.
             </p>
           </div>
 
           {/* Mode Switcher Tabs */}
-          <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 border border-slate-200 rounded-xl self-start md:self-auto">
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100 border border-slate-200 rounded-xl self-start md:self-auto">
             <button
               type="button"
               onClick={() => setActiveTab("location")}
@@ -245,7 +313,47 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
 
         {/* Tab 1: Single Location Search */}
         {activeTab === "location" && (
-          <div className="mt-5 relative">
+          <div className="mt-5 relative space-y-4">
+            {/* Region Mode Toggle Buttons */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Region Focus:</span>
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setRegionMode("all")}
+                  className={`px-3 py-1 rounded-lg font-bold transition ${
+                    regionMode === "all"
+                      ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  🌐 Pan-India & All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRegionMode("ner")}
+                  className={`px-3 py-1 rounded-lg font-bold transition ${
+                    regionMode === "ner"
+                      ? "bg-emerald-700 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  🏔️ NER 8-States Focus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRegionMode("pan_india")}
+                  className={`px-3 py-1 rounded-lg font-bold transition ${
+                    regionMode === "pan_india"
+                      ? "bg-purple-700 text-white shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  🇮🇳 Pan-India Hotspots
+                </button>
+              </div>
+            </div>
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -260,9 +368,22 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
                   onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                  placeholder={t.searchPlaceholder}
-                  className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded-xl pl-10 pr-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition font-medium"
+                  placeholder="Search ANY State, District, City, Town, Village, or Coordinates in India (e.g. Shillong, Gangtok, Darjeeling, Kedarnath, Kolkata)..."
+                  className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded-xl pl-10 pr-10 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition font-medium"
                 />
+                {/* Voice Search Button inside input */}
+                <button
+                  type="button"
+                  onClick={toggleVoiceSearch}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition ${
+                    isVoiceSearching
+                      ? "bg-rose-600 text-white animate-pulse"
+                      : "text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                  }`}
+                  title={isVoiceSearching ? "Listening... click to stop" : "Search by voice (speech recognition)"}
+                >
+                  <Radio className="w-4 h-4" />
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -286,7 +407,7 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  <span>{loading ? "Analyzing..." : "Analyze with AI"}</span>
+                  <span>{loading ? "Analyzing..." : "Analyze Location"}</span>
                 </button>
               </div>
             </form>
@@ -330,17 +451,10 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
 
             {/* Quick Preset Buttons */}
             <div className="flex items-center gap-2 mt-3.5 flex-wrap text-xs">
-              <span className="text-slate-400 font-semibold">Popular Hubs:</span>
-              {[
-                { name: "🏔️ Darjeeling", q: "Darjeeling" },
-                { name: "🏞️ Guwahati", q: "Guwahati" },
-                { name: "🌄 Shillong", q: "Shillong Peak Corridor" },
-                { name: "⛰️ Gangtok", q: "Gangtok NH-10 Corridor" },
-                { name: "🌿 Wayanad", q: "Wayanad" },
-                { name: "🌲 Shimla", q: "Shimla" },
-                { name: "🌊 Siliguri", q: "Siliguri" },
-                { name: "🏙️ Kolkata", q: "Kolkata" },
-              ].map((chip) => (
+              <span className="text-slate-400 font-semibold">
+                {regionMode === "ner" ? "NER Focus Stations:" : regionMode === "pan_india" ? "Pan-India Hotspots:" : "Suggested Hubs:"}
+              </span>
+              {DISPLAY_CHIPS.map((chip) => (
                 <button
                   key={chip.name}
                   type="button"
@@ -356,6 +470,7 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
             </div>
           </div>
         )}
+
 
         {/* Tab 2: Route Corridor Analysis */}
         {activeTab === "route" && (
@@ -512,8 +627,87 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
       {/* VIEW 2: FULL LOCATION INTELLIGENCE WITH RICHTER SCALE, FLOWCHART & UPCOMING FORECASTS */}
       {activeTab === "location" && result && (
         <div className="space-y-6 animate-fadeIn">
+          {/* Critical Emergency Banner if Score >= 75 */}
+          {scorecard?.overall_risk_score >= 75 && (
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-red-700 via-rose-700 to-red-900 text-white shadow-xl border-2 border-red-400/50 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 bg-black/40 rounded-xl shrink-0">
+                  <ShieldAlert className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base md:text-lg font-black tracking-wide text-white uppercase">
+                      🔴 CRITICAL MULTI-HAZARD DISASTER ALERT
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-black/50 text-white font-mono text-[10px] font-bold border border-white/30">
+                      LEVEL: RED CRITICAL
+                    </span>
+                  </div>
+                  <p className="text-xs text-red-100 mt-1 font-medium leading-relaxed">
+                    Extreme environmental threshold breach detected in <strong>{loc?.name}, {loc?.state}</strong> (Overall Risk: <strong>{scorecard?.overall_risk_score}/100</strong>). Primary trigger: <strong>{pred?.landslide?.risk_score >= pred?.flood?.risk_score ? "Landslide & Slope Shear Instability" : "Severe Riverine / Flash Inundation"}</strong>.
+                  </p>
+                  <p className="text-xs text-amber-200 mt-1 font-bold">
+                    ⚠️ Recommended Action: Avoid vulnerable cut slopes & low-lying bridges. District authorities placed on high emergency standby.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(true)}
+                  className="px-4 py-2.5 bg-white hover:bg-slate-100 text-red-900 font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>View Full AI Report</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Action & Intelligence Command Bar */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800">Intelligence Tools:</span>
+              <span className="text-xs text-slate-500 font-medium">
+                Grounded ML analysis for <strong>{loc?.name}</strong>
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReportModal(true)}
+                className="px-4 py-2 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-1.5"
+              >
+                <FileText className="w-4 h-4" />
+                <span>📄 Download AI Disaster Report</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSimulator(!showSimulator)}
+                className={`px-4 py-2 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-1.5 border ${
+                  showSimulator
+                    ? "bg-amber-600 text-white border-amber-500 shadow-md"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
+                }`}
+              >
+                <Zap className="w-4 h-4 text-amber-500" />
+                <span>{showSimulator ? "Hide 'What If?' Simulator" : "⚡ 'What If?' Disaster Simulator"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Embedded 'What If?' Simulator Panel if active */}
+          {showSimulator && (
+            <div className="animate-fadeIn">
+              <WhatIfSimulator locationData={result} />
+            </div>
+          )}
+
           {/* Top Explicit Danger Banner */}
-          {scorecard?.overall_risk_score >= 60 ? (
+          {scorecard?.overall_risk_score >= 60 && scorecard?.overall_risk_score < 75 ? (
             <div className="p-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-700 text-white font-black text-sm flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-6 h-6 animate-bounce" />
@@ -533,7 +727,7 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
                 ALL CLEAR / SAFE ZONE
               </span>
             </div>
-          ) : (
+          ) : scorecard?.overall_risk_score < 60 ? (
             <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-sm flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-6 h-6" />
@@ -543,14 +737,17 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
                 ADVISORY PHASE
               </span>
             </div>
-          )}
+          ) : null}
+
 
           {/* 1. Location Telemetry Status Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs border-l-4 border-l-emerald-600">
+            <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs border-l-4 border-l-emerald-600" title={loc?.display_name || `${loc?.name}, ${loc?.state}, ${loc?.country || 'India'}`}>
               <span className="text-[11px] text-slate-500 font-semibold block">Target Location</span>
               <span className="text-sm font-extrabold text-slate-900 truncate block mt-0.5">{loc?.name}</span>
-              <span className="text-[10px] text-slate-500 font-medium">{loc?.district}, {loc?.state}</span>
+              <span className="text-[10px] text-slate-500 font-medium truncate block">
+                {loc?.district ? `${loc?.district}, ` : ""}{loc?.state ? `${loc?.state}` : ""}{loc?.country && loc?.country !== "India" ? `, ${loc?.country}` : ""}
+              </span>
             </div>
 
             <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs border-l-4 border-l-blue-600">
@@ -1259,6 +1456,18 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
           </div>
         </div>
       )}
+
+      {/* AI Disaster Intelligence Full Report Modal */}
+      <AIDisasterReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        locationData={result}
+        query={query}
+      />
+
+      {/* Grounded Live AI Assistant Drawer */}
+      <AIChatAssistant locationData={result} />
     </div>
   );
 }
+

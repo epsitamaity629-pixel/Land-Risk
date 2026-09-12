@@ -13,7 +13,12 @@ if __name__ == "__main__":
     t.test_dual_hazard_prediction()
     print("Running location query test with live meteorology...")
     t.test_location_query_prediction()
+    print("Running AI report generation & what-if scenario simulation tests...")
+    t.test_ai_disaster_report_and_simulation()
+    print("Running AI chat assistant & location comparison tests...")
+    t.test_ai_chat_assistant_and_comparison()
     print("\nRunning universal geocoding test...")
+
     u.test_universal_geocoding()
     print("Running DEM elevation & slope test...")
     u.test_elevation_and_slope_engine()

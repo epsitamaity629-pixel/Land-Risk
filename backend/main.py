@@ -41,8 +41,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="NER Landslide Early Warning Platform",
-    version="1.0.0",
+    title="Bhu-Surakha Disaster Intelligence Platform",
+    version="2.4.0",
     lifespan=lifespan,
 )
 

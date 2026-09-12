@@ -1,141 +1,143 @@
-const API_BASE_URL = "/api";
+/**
+ * services/api.js — compatibility shim
+ *
+ * AIPredictionStudio and AlertsManager import from ../services/api
+ * using the legacy `api.methodName()` pattern. This shim re-exports the
+ * canonical api.js from src/api.js as a default object with all methods
+ * so both import styles work without touching every component.
+ */
+import {
+  api as apiCall,
+  get,
+  post,
+  patch,
+  searchLocationAndPredict,
+  getGazetteer,
+  predictMultiHazard,
+  inspectCoordinate,
+  getFloodZones,
+  batchSyncIncidents,
+  analyzeRouteRisk,
+  analyzeIncidentImage,
+  generateAIReport,
+  simulateScenario,
+  chatWithAIAssistant,
+  compareLocations,
+  getRegionalRiskIndices,
+} from "../api";
 
-export const api = {
-  // Universal Multi-Hazard Search & Location Prediction
-  searchLocationPredict: async (query = "", latitude = null, longitude = null) => {
-    const res = await fetch(`${API_BASE_URL}/predict/search-location`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, latitude, longitude }),
-    });
-    return res.json();
-  },
+// Legacy default export used as `api.predictRisk(...)`, `api.getMLMetrics()`, etc.
+const api = {
+  // Core
+  get,
+  post,
+  patch,
 
-  getGazetteer: async (q = "") => {
-    const res = await fetch(`${API_BASE_URL}/predict/gazetteer?q=${encodeURIComponent(q)}`);
-    return res.json();
-  },
+  // ML / Prediction
+  predictRisk: (params) =>
+    post("/api/predict-risk", {
+      slope_deg: params.slope_angle ?? params.slope_deg ?? 35,
+      rainfall_24h_mm: params.cumulative_24h_rainfall ?? params.rainfall_24h_mm ?? 80,
+      rainfall_7d_mm: (params.cumulative_24h_rainfall ?? 80) * 3.5,
+      soil_moisture_pct: params.soil_moisture ?? params.soil_moisture_pct ?? 65,
+      pore_pressure_kpa: params.pore_water_pressure_kpa ?? params.pore_pressure_kpa ?? 35,
+      elevation_m: params.elevation ?? params.elevation_m ?? 800,
+      lithology_code: params.lithology_code ?? 3,
+      displacement_mm: params.ground_displacement_rate ?? params.displacement_mm ?? 3,
+      tilt_deg: params.tilt_deg ?? 2.5,
+    }),
 
-  predictMultiHazard: async (payload) => {
-    const res = await fetch(`${API_BASE_URL}/predict/multi-hazard`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return res.json();
-  },
+  getMLMetrics: () => get("/api/ml/metrics"),
 
-  inspectCoordinate: async (lat, lon) => {
-    const res = await fetch(`${API_BASE_URL}/map/inspect-coordinate?lat=${lat}&lon=${lon}`);
-    return res.json();
-  },
+  // Location
+  searchLocationAndPredict,
+  getGazetteer,
+  predictMultiHazard,
+  inspectCoordinate,
 
-  getFloodZones: async () => {
-    const res = await fetch(`${API_BASE_URL}/map/flood-zones`);
-    return res.json();
-  },
-
-  // Dashboard
-  getDashboardOverview: async () => {
-    const res = await fetch(`${API_BASE_URL}/dashboard/summary`);
-    return res.json();
-  },
-
-  // GIS Map
-  getMapStations: async () => {
-    const res = await fetch(`${API_BASE_URL}/map/stations`);
-    return res.json();
-  },
-
-  getHighRiskPolygons: async () => {
-    const res = await fetch(`${API_BASE_URL}/map/high-risk-polygons`);
-    return res.json();
-  },
-
-  // AI Prediction & ML
-  predictRisk: async (payload) => {
-    const res = await fetch(`${API_BASE_URL}/predict-risk`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return res.json();
-  },
-
-  getMLMetrics: async () => {
-    const res = await fetch(`${API_BASE_URL}/ml/metrics`);
-    return res.json();
-  },
-
-  // Rainfall
-  getRainfallLatest: async () => {
-    const res = await fetch(`${API_BASE_URL}/rainfall/latest`);
-    return res.json();
-  },
-
-  getRainfallSeries: async (locationId = null) => {
-    const p = locationId ? `?location_id=${locationId}` : "";
-    const res = await fetch(`${API_BASE_URL}/rainfall/series${p}`);
-    return res.json();
-  },
-
-  // Sensors
-  getSensors: async () => {
-    const res = await fetch(`${API_BASE_URL}/map/sensors`);
-    return res.json();
-  },
+  // Map
+  getFloodZones,
+  getMapStations: () => get("/api/map/stations"),
+  getHighRiskPolygons: () => get("/api/map/high-risk-polygons"),
+  getEvacuationRoutes: () => get("/api/map/evacuation-routes"),
+  getMapFacilities: () => get("/api/map/facilities"),
+  getMapHistory: () => get("/api/map/history"),
 
   // Alerts
-  getActiveAlerts: async () => {
-    const res = await fetch(`${API_BASE_URL}/alerts/`);
-    return res.json();
-  },
+  getAlerts: (activeOnly = true) => get(`/api/alerts/?active_only=${activeOnly}`),
+  dispatchSimulation: ({ alert_id, channels = ["SMS Gateway", "Push Broadcast"] }) =>
+    post("/api/alerts/dispatch", { alert_id, channels }),
+  acknowledgeAlert: (id) => post(`/api/alerts/ack/${id}`, {}),
 
-  dispatchAlert: async (alertId, channels) => {
-    const res = await fetch(`${API_BASE_URL}/alerts/dispatch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alert_id: alertId, channels }),
-    });
-    return res.json();
-  },
+  // Incidents
+  getIncidents: () => get("/api/incidents/"),
+  createIncident: (formData) => post("/api/incidents/", formData),
+  updateIncidentStatus: (id, status) => patch(`/api/incidents/${id}/status`, { status }),
+  batchSyncIncidents,
+  analyzeIncidentImage,
 
-  // Historical
-  getHistoricalLandslides: async () => {
-    const res = await fetch(`${API_BASE_URL}/dashboard/history`);
-    return res.json();
-  },
+  // Rainfall
+  getLatestRainfall: () => get("/api/rainfall/latest"),
+  getRainfallSeries: (location_id, hours = 48) =>
+    get(`/api/rainfall/series?location_id=${location_id}&hours=${hours}`),
+  getRainfallThresholds: () => get("/api/rainfall/thresholds"),
 
-  // Incident Reports & Offline Sync
-  getIncidents: async () => {
-    const res = await fetch(`${API_BASE_URL}/incidents/`);
-    return res.json();
-  },
+  // Dashboard
+  getDashboardSummary: () => get("/api/dashboard/summary"),
+  getRiskTimeline: () => get("/api/dashboard/risk-timeline"),
+  getStateAnalytics: () => get("/api/dashboard/state-analytics"),
+  getDashboardHistory: () => get("/api/dashboard/history"),
+  getDashboardLocations: () => get("/api/dashboard/locations"),
 
-  batchSyncIncidents: async (reports) => {
-    const res = await fetch(`${API_BASE_URL}/incidents/batch-sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reports }),
-    });
-    return res.json();
-  },
+  // NER
+  getRegionalRiskIndices,
+  getNERRiskIndices: () => get("/api/ner/risk-indices"),
 
-  // Emergency Facilities
-  getEmergencyFacilities: async () => {
-    const res = await fetch(`${API_BASE_URL}/map/facilities`);
-    return res.json();
-  },
+  // AI
+  generateAIReport,
+  simulateScenario,
+  chatWithAIAssistant,
+  compareLocations,
 
-  // State Analytics
-  getStateAnalytics: async () => {
-    const res = await fetch(`${API_BASE_URL}/dashboard/state-analytics`);
-    return res.json();
-  },
+  // Route
+  analyzeRouteRisk,
 
-  // Live Simulation
-  simulationTick: async () => {
-    const res = await fetch(`${API_BASE_URL}/simulation/tick`, { method: "POST" });
-    return res.json();
-  },
+  // Reports
+  getReports: () => get("/api/reports/"),
+  exportReport: (type) => get(`/api/reports/export?type=${type}`),
+
+  // Sensors
+  getSensors: () => get("/api/sensors/"),
+  getSensorReadings: (id, hours = 24) => get(`/api/sensors/${id}/readings?hours=${hours}`),
+
+  // Emergency
+  getEmergencyFacilities: () => get("/api/emergency/facilities"),
+
+  // Simulation
+  startSimulation: (scenario) => post("/api/simulation/start", { scenario }),
+  stopSimulation: () => post("/api/simulation/stop", {}),
+  getSimulationState: () => get("/api/simulation/state"),
+};
+
+export default api;
+
+// Named re-exports so `import { post } from "../services/api"` also works
+export {
+  apiCall as api,
+  get,
+  post,
+  patch,
+  searchLocationAndPredict,
+  getGazetteer,
+  predictMultiHazard,
+  inspectCoordinate,
+  getFloodZones,
+  batchSyncIncidents,
+  analyzeRouteRisk,
+  analyzeIncidentImage,
+  generateAIReport,
+  simulateScenario,
+  chatWithAIAssistant,
+  compareLocations,
+  getRegionalRiskIndices,
 };

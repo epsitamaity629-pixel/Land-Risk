@@ -11,11 +11,17 @@ import {
   Users,
   Compass,
   FileText,
-  Clock
+  Clock,
+  Sparkles,
+  MapPin,
+  TrendingUp,
+  Scale,
+  Siren
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import RiskGauge from "../components/RiskGauge";
 import LocationRiskSearch from "../components/LocationRiskSearch";
-import { get } from "../api";
+import { get, getRegionalRiskIndices } from "../api";
 import { useAuth } from "../AuthContext";
 
 export default function Dashboard() {
@@ -25,6 +31,7 @@ export default function Dashboard() {
   const [locs, setLocs] = useState([]);
   const [tl, setTl] = useState([]);
   const [rain, setRain] = useState([]);
+  const [regionalIndices, setRegionalIndices] = useState(null);
 
   const load = () => {
     get("/api/dashboard/summary").then(setSum).catch(console.error);
@@ -32,6 +39,7 @@ export default function Dashboard() {
     get("/api/dashboard/locations").then(setLocs).catch(console.error);
     get("/api/dashboard/risk-timeline").then(setTl).catch(console.error);
     get("/api/rainfall/latest").then(setRain).catch(console.error);
+    getRegionalRiskIndices().then(setRegionalIndices).catch(console.error);
   };
 
   useEffect(() => {
@@ -44,17 +52,43 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {t.commandCenter}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+              {t.commandCenter}
+            </h1>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+              Bhu-Surakha Grid
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time multi-hazard telemetry, IMD radar feeds, and early warning grid for 8 NER states.
+            Real-time multi-hazard telemetry, IMD radar feeds, and early warning grid for 8 NER states and Pan-India.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/app/compare"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 text-xs font-bold transition"
+          >
+            <Scale className="w-3.5 h-3.5 text-purple-700" />
+            <span>Compare Locations</span>
+          </Link>
+          <Link
+            to="/app/ner"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-bold transition"
+          >
+            <Mountain className="w-3.5 h-3.5 text-emerald-700" />
+            <span>NER Dashboard</span>
+          </Link>
+          <Link
+            to="/app/alert-center"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-900 border border-red-200 text-xs font-bold transition"
+          >
+            <Siren className="w-3.5 h-3.5 text-red-700" />
+            <span>Alert Centre</span>
+          </Link>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
             <span>Telemetry Grid Active</span>
@@ -115,6 +149,123 @@ export default function Dashboard() {
           <p className="text-[11px] text-slate-500 mt-1">Imminent hazard response</p>
         </div>
       </div>
+
+      {/* ── My Disaster Dashboard: Saved Places & Personal Risk ── */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-emerald-700" />
+            <h2 className="text-sm font-black text-slate-900">
+              My Saved Places & Personal Risk Monitor
+            </h2>
+          </div>
+          <Link
+            to="/app/profile"
+            className="text-xs font-bold text-emerald-700 hover:text-emerald-800 transition"
+          >
+            Manage Places in Profile →
+          </Link>
+        </div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { name: "Shillong", category: "🏡 Home", state: "Meghalaya", risk: 74, status: "HIGH", hazard: "Landslide Risk" },
+            { name: "Gangtok", category: "🎓 College", state: "Sikkim", risk: 68, status: "HIGH", hazard: "Slope & Teesta Inundation" },
+            { name: "Guwahati", category: "👨‍👩‍👧 Family", state: "Assam", risk: 52, status: "MODERATE", hazard: "Brahmaputra River Basin" },
+            { name: "Darjeeling", category: "✈️ Travel", state: "West Bengal", risk: 61, status: "HIGH", hazard: "Hill Road Cutting" },
+          ].map((place) => (
+            <div
+              key={place.name}
+              className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-400 transition flex flex-col justify-between space-y-2"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">{place.category}</span>
+                  <h3 className="text-sm font-black text-slate-900">{place.name}</h3>
+                  <span className="text-[11px] text-slate-500">{place.state}</span>
+                </div>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  place.risk >= 60 ? "bg-red-100 text-red-800 border border-red-300" :
+                  place.risk < 40 ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
+                  "bg-amber-100 text-amber-800 border border-amber-300"
+                }`}>
+                  {place.status} ({place.risk})
+                </span>
+              </div>
+              <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span className="text-[10px] text-slate-500 truncate max-w-[120px]">{place.hazard}</span>
+                <Link
+                  to={`/app/analyze?q=${encodeURIComponent(place.name)}`}
+                  className="font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 text-[11px]"
+                >
+                  <span>Analyze</span>
+                  <Sparkles className="w-3 h-3" />
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 8-State NER Risk Indices Grid */}
+      {regionalIndices?.ner_states && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+            <div className="flex items-center gap-2">
+              <Mountain className="w-4 h-4 text-emerald-700" />
+              <h2 className="text-sm font-black text-slate-900">
+                8 NER States Live Vulnerability Matrix
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500 font-medium">NER Composite Risk:</span>
+              <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                {regionalIndices.overall_ner_risk_score} / 100 ({regionalIndices.overall_ner_status})
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {regionalIndices.ner_states.map((st) => {
+              const isDanger = st.risk_score >= 60;
+              const isSafe = st.risk_score < 40;
+              return (
+                <div
+                  key={st.state}
+                  className={`p-3 rounded-xl border text-center transition ${
+                    isDanger
+                      ? "bg-red-50/70 border-red-200"
+                      : isSafe
+                      ? "bg-emerald-50/70 border-emerald-200"
+                      : "bg-amber-50/70 border-amber-200"
+                  }`}
+                >
+                  <div className="text-xs font-bold text-slate-900 truncate">{st.state}</div>
+                  <div className="text-xl font-black mt-1 font-mono text-slate-900">
+                    {st.risk_score}
+                  </div>
+                  <div className="mt-1">
+                    <span
+                      className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                        isDanger
+                          ? "bg-red-200 text-red-900"
+                          : isSafe
+                          ? "bg-emerald-200 text-emerald-900"
+                          : "bg-amber-200 text-amber-900"
+                      }`}
+                    >
+                      {st.status}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-slate-500 mt-1 truncate" title={st.primary_hazard}>
+                    {st.primary_hazard}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Charts & Alert Feeds */}
       <div className="grid lg:grid-cols-3 gap-5">

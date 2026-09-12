@@ -21,12 +21,17 @@ import {
   Layers,
   Sparkles,
   Info,
-  Radio
+  Radio,
+  Globe2,
+  ArrowRight
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { get, getFloodZones, inspectCoordinate, getGazetteer } from "../api";
 import { useAuth } from "../AuthContext";
+import GISRiskMap from "../components/GISRiskMap";
 
 const NER_CENTER = [26.2, 92.9];
+const INDIA_CENTER = [22.5, 80.0];
 
 function styleLandslide(f) {
   const s = f.properties.risk_score || 0;
@@ -64,12 +69,16 @@ function MapFlyTo({ position }) {
 
 export default function MapPage() {
   const { t } = useAuth();
+  const navigate = useNavigate();
+  const [mapMode, setMapMode] = useState("advanced"); // "advanced" | "classic"
   const [stations, setStations] = useState(null);
   const [polys, setPolys] = useState(null);
   const [floodPolys, setFloodPolys] = useState(null);
   const [sensors, setSensors] = useState(null);
   const [facs, setFacs] = useState(null);
   const [routes, setRoutes] = useState(null);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const [base, setBase] = useState("osm");
 
   // Map Search & Interactive Inspection State
@@ -87,6 +96,7 @@ export default function MapPage() {
     get("/api/map/sensors").then(setSensors).catch(console.error);
     get("/api/map/facilities").then(setFacs).catch(console.error);
     get("/api/map/evacuation-routes").then(setRoutes).catch(console.error);
+    get("/api/dashboard/locations").then(setLocations).catch(console.error);
   }, []);
 
   const handleQueryChange = async (val) => {

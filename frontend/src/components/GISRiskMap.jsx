@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MapContainer,
   TileLayer,
@@ -6,655 +7,638 @@ import {
   Popup,
   Circle,
   Polyline,
-  Polygon
+  Polygon,
+  useMapEvents,
+  ZoomControl,
 } from "react-leaflet";
 import L from "leaflet";
 import {
-  Layers,
-  AlertTriangle,
-  Radio,
-  Navigation,
-  Shield,
-  Activity,
-  Droplets,
-  Mountain,
-  Waves,
-  History,
-  Route,
-  Home,
-  CheckSquare,
-  Square,
-  Sparkles
+  Layers, AlertTriangle, Globe2, Mountain, Waves, Activity,
+  CloudRain, Thermometer, MapPin, Shield, Eye, EyeOff,
+  Crosshair, Navigation, Filter, X, ChevronRight, Sparkles,
+  Radio, Zap, Map as MapIcon, ArrowRight, Info
 } from "lucide-react";
-import RiskGauge from "./RiskGauge";
+import { inspectCoordinate, getFloodZones } from "../api";
 
-// Colored Leaflet pin icons
-const createPinIcon = (color, emoji) => {
-  const html = `
-    <div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-size: 13px;">
-      ${emoji}
-    </div>
-  `;
-  return L.divIcon({
-    className: "custom-map-pin",
-    html: html,
+// ─── Leaflet icon helpers ───────────────────────────────────────────────────
+const pin = (color, emoji) =>
+  L.divIcon({
+    className: "",
+    html: `<div style="background:${color};width:28px;height:28px;border-radius:50%;border:2.5px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:13px;">${emoji}</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    popupAnchor: [0, -16],
   });
-};
 
 const ICONS = {
-  critical: createPinIcon("#dc2626", "🔴"),
-  high: createPinIcon("#ea580c", "🟠"),
-  moderate: createPinIcon("#d97706", "🟡"),
-  low: createPinIcon("#16a34a", "🟢"),
-  flood: createPinIcon("#0284c7", "🌊"),
-  landslide: createPinIcon("#b45309", "⛰️"),
-  shelter: createPinIcon("#059669", "🏥"),
-  village: createPinIcon("#6366f1", "🏘️"),
+  critical:  pin("#dc2626", "🔴"),
+  high:      pin("#ea580c", "🟠"),
+  moderate:  pin("#d97706", "🟡"),
+  low:       pin("#16a34a", "🟢"),
+  flood:     pin("#0284c7", "🌊"),
+  landslide: pin("#b45309", "⛰️"),
+  shelter:   pin("#059669", "🏥"),
+  village:   pin("#6366f1", "🏘️"),
+  seismic:   pin("#7c3aed", "🔵"),
+  inspect:   pin("#0f172a", "📍"),
 };
 
-export default function GISRiskMap({
-  locations = [],
-  selectedLocation = null,
-  onSelectLocation = null,
-  facilities = []
-}) {
+const scoreIcon = (score) => {
+  if (score >= 80) return ICONS.critical;
+  if (score >= 60) return ICONS.high;
+  if (score >= 40) return ICONS.moderate;
+  return ICONS.low;
+};
+
+// ─── Static geo data ────────────────────────────────────────────────────────
+const HIGHWAYS = [
+  { name: "NH-10 · Siliguri → Gangtok (High Landslide Risk)", color: "#dc2626", risk: "HIGH",
+    coords: [[26.727,88.395],[26.883,88.450],[26.980,88.480],[27.067,88.467],[27.170,88.510],[27.234,88.498],[27.339,88.607]] },
+  { name: "NH-55 · Siliguri → Darjeeling", color: "#ea580c", risk: "MODERATE",
+    coords: [[26.727,88.395],[26.883,88.283],[27.036,88.263]] },
+  { name: "NH-6 · Guwahati → Shillong → Aizawl", color: "#d97706", risk: "MODERATE",
+    coords: [[26.144,91.736],[25.900,91.800],[25.579,91.893],[24.833,92.779],[23.727,92.718]] },
+  { name: "NH-29 · Dimapur → Kohima (Critical Sinking Zone)", color: "#dc2626", risk: "HIGH",
+    coords: [[25.909,93.727],[25.800,93.900],[25.675,94.109]] },
+  { name: "NH-13 · Trans-Arunachal Highway", color: "#b45309", risk: "MODERATE",
+    coords: [[26.944,93.616],[27.100,93.900],[27.250,94.200],[27.500,94.600]] },
+  { name: "NH-27 · Dima Hasao Corridor (Assam)", color: "#ea580c", risk: "HIGH",
+    coords: [[25.170,92.770],[25.300,93.000],[25.420,93.200]] },
+  { name: "NH-107 · Rishikesh → Kedarnath", color: "#dc2626", risk: "CRITICAL",
+    coords: [[30.085,78.268],[30.250,78.800],[30.500,79.100],[30.734,79.067]] },
+  { name: "NH-58 · Joshimath Corridor (Uttarakhand)", color: "#dc2626", risk: "CRITICAL",
+    coords: [[30.085,78.268],[30.300,79.200],[30.556,79.565]] },
+];
+
+const RIVERS = [
+  { name: "Brahmaputra", color: "#1d4ed8",
+    coords: [[28.067,95.333],[27.473,94.912],[26.950,94.217],[26.578,93.171],[26.144,91.736],[26.020,89.980]] },
+  { name: "Teesta", color: "#2563eb",
+    coords: [[27.498,88.534],[27.339,88.607],[27.234,88.498],[26.980,88.480],[26.727,88.395]] },
+  { name: "Barak / Surma", color: "#3b82f6",
+    coords: [[25.150,93.800],[24.833,92.779],[24.500,91.900],[24.200,91.600]] },
+  { name: "Subansiri", color: "#60a5fa",
+    coords: [[27.800,94.500],[27.300,93.500],[26.600,93.200],[26.144,91.736]] },
+  { name: "Ganga (Upper)", color: "#1d4ed8",
+    coords: [[30.900,78.800],[30.300,78.500],[29.950,78.200],[29.500,77.800],[28.600,77.200]] },
+];
+
+// NER state approximate boundary boxes for shading
+const NER_POLYGONS = [
+  { name: "Assam",            color: "#3b82f6", coords: [[27.5,89.7],[27.5,96.0],[24.1,96.0],[24.1,89.7]] },
+  { name: "Meghalaya",        color: "#8b5cf6", coords: [[26.1,89.8],[26.1,92.8],[24.9,92.8],[24.9,89.8]] },
+  { name: "Sikkim",           color: "#ec4899", coords: [[28.2,88.0],[28.2,88.9],[27.1,88.9],[27.1,88.0]] },
+  { name: "Arunachal Pradesh",color: "#f59e0b", coords: [[29.5,91.5],[29.5,97.4],[26.6,97.4],[26.6,91.5]] },
+  { name: "Manipur",          color: "#10b981", coords: [[25.7,92.9],[25.7,94.8],[23.8,94.8],[23.8,92.9]] },
+  { name: "Mizoram",          color: "#06b6d4", coords: [[24.5,92.2],[24.5,93.4],[21.9,93.4],[21.9,92.2]] },
+  { name: "Nagaland",         color: "#84cc16", coords: [[27.1,93.3],[27.1,95.3],[25.2,95.3],[25.2,93.3]] },
+  { name: "Tripura",          color: "#f97316", coords: [[24.5,91.2],[24.5,92.4],[22.9,92.4],[22.9,91.2]] },
+];
+
+// Map view configurations
+const MAP_VIEWS = {
+  ner: { center: [26.0, 92.5], zoom: 7, label: "🏔️ NER Focus" },
+  pan_india: { center: [22.5, 80.0], zoom: 5, label: "🇮🇳 Pan-India" },
+  northeast_himalayas: { center: [27.5, 88.5], zoom: 8, label: "⛰️ NE Himalayas" },
+  western_ghats: { center: [10.8, 76.5], zoom: 7, label: "🌿 Western Ghats" },
+  uttarakhand: { center: [30.4, 79.0], zoom: 8, label: "🏔️ Uttarakhand" },
+};
+
+// Hazard filter definitions
+const HAZARD_FILTERS = [
+  { key: "all",        label: "All Hazards",      icon: "🛡️", color: "slate" },
+  { key: "landslide",  label: "Landslide",        icon: "⛰️", color: "amber" },
+  { key: "flood",      label: "Flood",            icon: "🌊", color: "blue" },
+  { key: "earthquake", label: "Earthquake",       icon: "🔵", color: "purple" },
+  { key: "rainfall",   label: "Extreme Rainfall", icon: "🌧️", color: "sky" },
+  { key: "cyclone",    label: "Cyclone",          icon: "🌀", color: "cyan" },
+  { key: "heatwave",   label: "Heatwave",         icon: "☀️", color: "orange" },
+];
+
+// Risk colour map
+const RC = (score) => {
+  if (score >= 80) return { fill: "#fecaca", stroke: "#dc2626", label: "CRITICAL" };
+  if (score >= 60) return { fill: "#fed7aa", stroke: "#ea580c", label: "HIGH"     };
+  if (score >= 40) return { fill: "#fef08a", stroke: "#ca8a04", label: "MODERATE" };
+  return              { fill: "#bbf7d0", stroke: "#16a34a", label: "LOW"      };
+};
+
+// ─── Map click inspector ────────────────────────────────────────────────────
+function ClickInspector({ active, onInspect }) {
+  useMapEvents({
+    click: (e) => {
+      if (active) onInspect(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+export default function GISRiskMap({ locations = [], selectedLocation = null, onSelectLocation = null, facilities = [] }) {
+  const navigate = useNavigate();
+  const mapRef = useRef(null);
+
+  const [viewKey, setViewKey]         = useState("ner");
+  const [baseMap, setBaseMap]         = useState("streets");
+  const [hazardFilter, setHazardFilter] = useState("all");
   const [filterState, setFilterState] = useState("All");
-  const [filterRisk, setFilterRisk] = useState("All");
-  const [baseMap, setBaseMap] = useState("streets"); // 'streets' or 'satellite'
+  const [filterRisk, setFilterRisk]   = useState("All");
+  const [inspectMode, setInspectMode] = useState(false);
+  const [inspecting, setInspecting]   = useState(false);
+  const [inspectResult, setInspectResult] = useState(null);
+  const [inspectLatLng, setInspectLatLng] = useState(null);
+  const [floodZones, setFloodZones]   = useState([]);
+  const [sidePanel, setSidePanel]     = useState(true);
 
-  // Layer Visibility Checkboxes
   const [layers, setLayers] = useState({
-    floodRisk: true,
-    landslideRisk: true,
-    historicalFlood: true,
-    historicalLandslide: true,
-    roads: true,
-    villages: true,
-    rivers: true,
-    rainfall: true,
-    soilMoisture: true,
+    stations:         true,
+    floodZones:       true,
+    highways:         true,
+    rivers:           true,
+    villages:         false,
+    facilities:       true,
+    nerBoundaries:    true,
+    rainfallCircles:  false,
+    historicalEvents: false,
+    seismicZones:     false,
   });
 
-  const toggleLayer = (key) => {
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleLayer = (k) => setLayers((p) => ({ ...p, [k]: !p[k] }));
 
-  const states = [
-    "All",
-    "West Bengal",
-    "Sikkim",
-    "Assam",
-    "Meghalaya",
-    "Arunachal Pradesh",
-    "Nagaland",
-    "Manipur",
-    "Mizoram",
-    "Tripura"
-  ];
+  // Load flood zones once
+  useEffect(() => {
+    getFloodZones()
+      .then((g) => setFloodZones(g?.features || []))
+      .catch(() => {});
+  }, []);
 
-  // Filtered locations
+  // When selectedLocation changes, fly map to it
+  useEffect(() => {
+    const m = mapRef.current;
+    if (m && selectedLocation?.latitude && selectedLocation?.longitude) {
+      m.flyTo([selectedLocation.latitude, selectedLocation.longitude], 11, { duration: 1.2 });
+    }
+  }, [selectedLocation]);
+
+  const handleInspect = useCallback(async (lat, lng) => {
+    setInspecting(true);
+    setInspectLatLng({ lat, lng });
+    try {
+      const data = await inspectCoordinate(lat, lng);
+      setInspectResult(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setInspecting(false);
+    }
+  }, []);
+
+  // Filter locations
   const filteredLocs = locations.filter((l) => {
-    const matchState = filterState === "All" || l.state === filterState;
-    const matchRisk = filterRisk === "All" || l.risk_level === filterRisk;
-    return matchState && matchRisk;
+    const stateOk = filterState === "All" || l.state === filterState;
+    const riskOk  = filterRisk  === "All" || l.risk_level === filterRisk;
+    const hazardOk = hazardFilter === "all" || true; // All stations shown for all hazards
+    return stateOk && riskOk && hazardOk;
   });
 
-  // Notable highway corridors for polyline rendering
-  const HIGHWAY_CORRIDORS = [
-    {
-      name: "NH-10 (Siliguri - Sevoke - Teesta Bazar - Gangtok)",
-      coords: [
-        [26.7271, 88.3953],
-        [26.8833, 88.4500],
-        [26.9800, 88.4800],
-        [27.0667, 88.4667],
-        [27.1700, 88.5100],
-        [27.2340, 88.4980],
-        [27.3389, 88.6065]
-      ],
-      color: "#dc2626", // High risk
-      status: "High Landslide Vulnerability (29th Mile & Birik Dara)"
-    },
-    {
-      name: "NH-55 (Siliguri - Kurseong - Darjeeling)",
-      coords: [
-        [26.7271, 88.3953],
-        [26.8833, 88.2833],
-        [27.0360, 88.2627]
-      ],
-      color: "#ea580c",
-      status: "Moderate Slip Watch (Giddapahar & Rohini Bypass)"
-    },
-    {
-      name: "NH-6 (Guwahati - Shillong - Aizawl)",
-      coords: [
-        [26.1445, 91.7362],
-        [25.9000, 91.8000],
-        [25.5788, 91.8933],
-        [24.8333, 92.7789],
-        [23.7271, 92.7176]
-      ],
-      color: "#d97706",
-      status: "Corridor Active"
-    },
-    {
-      name: "NH-29 (Dimapur - Kohima)",
-      coords: [
-        [25.9090, 93.7270],
-        [25.8000, 93.9000],
-        [25.6751, 94.1086]
-      ],
-      color: "#dc2626",
-      status: "Critical Sinking Area (Dzüdza & Phevima)"
-    }
-  ];
+  const view = MAP_VIEWS[viewKey] ?? MAP_VIEWS.ner;
+  const tileUrl = baseMap === "satellite"
+    ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  const tileAttr = baseMap === "satellite"
+    ? "Tiles © Esri — Esri, DeLorme, NAVTEQ, USGS, NRCS"
+    : '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/attributions">CARTO</a>';
 
-  // River vectors
-  const RIVERS = [
-    {
-      name: "Brahmaputra River Basin",
-      coords: [
-        [28.0667, 95.3333],
-        [27.4728, 94.9120],
-        [26.9500, 94.2167],
-        [26.5775, 93.1711],
-        [26.1445, 91.7362],
-        [26.0200, 89.9800]
-      ],
-      color: "#0284c7"
-    },
-    {
-      name: "Teesta River System",
-      coords: [
-        [27.4975, 88.5340],
-        [27.3389, 88.6065],
-        [27.2340, 88.4980],
-        [26.9800, 88.4800],
-        [26.7271, 88.3953]
-      ],
-      color: "#0284c7"
-    }
-  ];
-
-  // Villages / Settlements
-  const VILLAGES = [
-    { name: "Lebong Busty", lat: 27.0500, lon: 88.2700, state: "West Bengal", pop: 3400 },
-    { name: "Teesta Bazar Village", lat: 27.0700, lon: 88.4300, state: "West Bengal", pop: 2100 },
-    { name: "Singtam Ward 4", lat: 27.2340, lon: 88.5100, state: "Sikkim", pop: 4800 },
-    { name: "Kamakhya Foothills", lat: 26.1600, lon: 91.7100, state: "Assam", pop: 7200 },
-    { name: "Dima Hasao Lower Ward", lat: 25.1700, lon: 93.0200, state: "Assam", pop: 1900 },
-    { name: "Upper Shillong Colony", lat: 25.5600, lon: 91.8800, state: "Meghalaya", pop: 5400 }
-  ];
-
-  const centerCoordinates = selectedLocation
-    ? [selectedLocation.latitude, selectedLocation.longitude]
-    : [26.7000, 91.5000]; // Regional center
+  const NER_STATES_LIST = ["All","Assam","Arunachal Pradesh","Meghalaya","Manipur","Mizoram","Nagaland","Tripura","Sikkim","West Bengal"];
 
   return (
-    <div className="space-y-4">
-      {/* Top Filter & Layer Bar - Clean White Theme */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+    <div className="space-y-3">
+      {/* ── Controls Panel ──────────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+
+        {/* Row 1: Title + mode switcher + basemap */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <Layers className="h-5 w-5" />
+            <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+              <Layers className="w-5 h-5 text-emerald-700" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
-                Interactive Multi-Hazard GIS & Highway Grid Map
-              </h2>
-              <p className="text-xs text-slate-500">
-                Live spatial susceptibility, vulnerable highway passes, active floodplains & safe emergency shelters.
-              </p>
+              <h2 className="text-sm font-black text-slate-900">Interactive Multi-Hazard GIS Risk Map</h2>
+              <p className="text-xs text-slate-500">Live spatial susceptibility, highways, rivers, seismic zones & emergency shelters.</p>
             </div>
           </div>
 
-          {/* Map Base & Region Filters */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            <div className="flex items-center gap-1">
-              <span className="text-slate-500 font-medium">State:</span>
-              <select
-                value={filterState}
-                onChange={(e) => setFilterState(e.target.value)}
-                className="bg-slate-50 text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              >
-                {states.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* View presets */}
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-[11px]">
+              {Object.entries(MAP_VIEWS).map(([k, v]) => (
+                <button key={k} onClick={() => setViewKey(k)}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition whitespace-nowrap ${viewKey === k ? "bg-emerald-700 text-white shadow" : "text-slate-600 hover:text-slate-900"}`}>
+                  {v.label}
+                </button>
+              ))}
             </div>
 
-            <div className="flex items-center gap-1">
-              <span className="text-slate-500 font-medium">Risk:</span>
-              <select
-                value={filterRisk}
-                onChange={(e) => setFilterRisk(e.target.value)}
-                className="bg-slate-50 text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              >
-                <option value="All">All Tiers</option>
-                <option value="CRITICAL">🔴 Critical</option>
-                <option value="HIGH">🟠 High</option>
-                <option value="MODERATE">🟡 Moderate</option>
-                <option value="LOW">🟢 Low</option>
-              </select>
-            </div>
-
-            {/* Satellite / Street Map Toggle */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setBaseMap("streets")}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition ${
-                  baseMap === "streets" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
-                }`}
-              >
-                Streets
-              </button>
-              <button
-                type="button"
-                onClick={() => setBaseMap("satellite")}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition ${
-                  baseMap === "satellite" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
-                }`}
-              >
-                Satellite Imagery
-              </button>
+            {/* Basemap toggle */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+              {["streets","satellite"].map((b) => (
+                <button key={b} onClick={() => setBaseMap(b)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${baseMap === b ? "bg-white text-slate-900 shadow-xs" : "text-slate-500"}`}>
+                  {b === "streets" ? "Streets" : "Satellite"}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* 10 Layer Toggle Checkboxes as requested by user */}
-        <div className="mt-3 pt-1 flex items-center gap-3 flex-wrap text-xs text-slate-700 font-medium">
-          <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Map Layers:</span>
+        {/* Row 2: Hazard filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider shrink-0">Hazard Filter:</span>
+          {HAZARD_FILTERS.map((h) => (
+            <button key={h.key} onClick={() => setHazardFilter(h.key)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                hazardFilter === h.key
+                  ? "bg-slate-900 text-white border-slate-900 shadow"
+                  : "bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-400"
+              }`}>
+              <span>{h.icon}</span><span>{h.label}</span>
+            </button>
+          ))}
+        </div>
 
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.floodRisk}
-              onChange={() => toggleLayer("floodRisk")}
-              className="rounded text-blue-600 focus:ring-0"
-            />
-            <span>Flood Risk</span>
-          </label>
+        {/* Row 3: Dropdowns + layer toggles + inspect */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <select value={filterState} onChange={(e) => setFilterState(e.target.value)}
+              className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              {NER_STATES_LIST.map((s) => <option key={s}>{s}</option>)}
+            </select>
 
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.landslideRisk}
-              onChange={() => toggleLayer("landslideRisk")}
-              className="rounded text-amber-600 focus:ring-0"
-            />
-            <span>Landslide Risk</span>
-          </label>
+            <select value={filterRisk} onChange={(e) => setFilterRisk(e.target.value)}
+              className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              <option value="All">All Risk Tiers</option>
+              <option value="CRITICAL">🔴 Critical</option>
+              <option value="HIGH">🟠 High</option>
+              <option value="MODERATE">🟡 Moderate</option>
+              <option value="LOW">🟢 Low</option>
+            </select>
 
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.historicalFlood}
-              onChange={() => toggleLayer("historicalFlood")}
-              className="rounded text-indigo-600 focus:ring-0"
-            />
-            <span>Historical Flood</span>
-          </label>
+            {/* Inspect mode toggle */}
+            <button onClick={() => { setInspectMode((p) => !p); setInspectResult(null); }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold border transition ${
+                inspectMode ? "bg-purple-700 text-white border-purple-700 animate-pulse" : "bg-slate-50 text-slate-700 border-slate-300 hover:border-purple-500"
+              }`}>
+              <Crosshair className="w-3.5 h-3.5" />
+              {inspectMode ? "Click map to inspect..." : "Click-to-Inspect"}
+            </button>
+          </div>
 
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.historicalLandslide}
-              onChange={() => toggleLayer("historicalLandslide")}
-              className="rounded text-red-600 focus:ring-0"
-            />
-            <span>Historical Landslide</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.roads}
-              onChange={() => toggleLayer("roads")}
-              className="rounded text-orange-600 focus:ring-0"
-            />
-            <span>Roads & Highways</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.villages}
-              onChange={() => toggleLayer("villages")}
-              className="rounded text-purple-600 focus:ring-0"
-            />
-            <span>Villages / Settlements</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.rivers}
-              onChange={() => toggleLayer("rivers")}
-              className="rounded text-cyan-600 focus:ring-0"
-            />
-            <span>Rivers / Drainage</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.rainfall}
-              onChange={() => toggleLayer("rainfall")}
-              className="rounded text-blue-500 focus:ring-0"
-            />
-            <span>Rainfall Radar</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-emerald-700">
-            <input
-              type="checkbox"
-              checked={layers.soilMoisture}
-              onChange={() => toggleLayer("soilMoisture")}
-              className="rounded text-teal-600 focus:ring-0"
-            />
-            <span>Soil Moisture</span>
-          </label>
+          {/* Layer checkboxes */}
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-700 font-medium">
+            {[
+              { k: "stations",         label: "Stations"          },
+              { k: "floodZones",       label: "Flood Zones"       },
+              { k: "nerBoundaries",    label: "NER Borders"       },
+              { k: "highways",         label: "Highways"          },
+              { k: "rivers",           label: "Rivers"            },
+              { k: "facilities",       label: "Shelters"          },
+              { k: "rainfallCircles",  label: "Rainfall Radar"    },
+              { k: "historicalEvents", label: "History"           },
+              { k: "seismicZones",     label: "Seismic"           },
+              { k: "villages",         label: "Settlements"       },
+            ].map(({ k, label }) => (
+              <label key={k} className="flex items-center gap-1 cursor-pointer select-none hover:text-emerald-700">
+                <input type="checkbox" checked={layers[k]} onChange={() => toggleLayer(k)}
+                  className="rounded text-emerald-600 focus:ring-0 w-3 h-3" />
+                {label}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Main Map Frame */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[640px]">
-        {/* Left Side: Station & Spot Inspector Card */}
-        <div className="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between overflow-y-auto shadow-xs">
-          {selectedLocation ? (
-            <div className="space-y-4">
-              <div className="pb-3 border-b border-slate-100">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700">
-                    {selectedLocation.code || "STATION"}
-                  </span>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide ${
-                      selectedLocation.risk_score >= 60
-                        ? "bg-red-100 text-red-800 border border-red-300 ring-1 ring-red-400"
-                        : selectedLocation.risk_score < 40
-                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300 font-black"
-                        : "bg-amber-100 text-amber-800 border border-amber-300 font-bold"
-                    }`}
-                  >
-                    {selectedLocation.risk_score >= 60
-                      ? "🔴 DANGER ZONE"
-                      : selectedLocation.risk_score < 40
-                      ? "🟢 DANGER FREE (SAFE)"
-                      : "🟡 MODERATE (WATCH)"}
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mt-2">
-                  {selectedLocation.name}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {selectedLocation.district}, {selectedLocation.state}
-                </p>
-                {selectedLocation.highway && (
-                  <span className="inline-block mt-1 text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                    {selectedLocation.highway}
-                  </span>
-                )}
-              </div>
+      {/* ── Map + Side Panel Row ─────────────────────────────────── */}
+      <div className="flex gap-3">
+        {/* Map */}
+        <div className={`relative flex-1 rounded-xl overflow-hidden border border-slate-200 shadow-sm ${inspectMode ? "cursor-crosshair" : ""}`}
+          style={{ height: "600px" }}>
+          <MapContainer
+            key={viewKey}
+            center={view.center}
+            zoom={view.zoom}
+            style={{ height: "100%", width: "100%" }}
+            zoomControl={false}
+            whenCreated={(m) => { mapRef.current = m; }}
+          >
+            <ZoomControl position="topright" />
+            <ClickInspector active={inspectMode} onInspect={handleInspect} />
 
-              {/* Status Callout Banner */}
-              {selectedLocation.risk_score >= 60 ? (
-                <div className="p-2.5 rounded-lg bg-red-600 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>🔴 DANGER: CRITICAL RISK DETECTED</span>
-                </div>
-              ) : selectedLocation.risk_score < 40 ? (
-                <div className="p-2.5 rounded-lg bg-emerald-600 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs">
-                  <Shield className="w-4 h-4 shrink-0" />
-                  <span>🟢 DANGER FREE: SAFE & STABLE TERRAIN</span>
-                </div>
-              ) : (
-                <div className="p-2.5 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-xs">
-                  <Activity className="w-4 h-4 shrink-0" />
-                  <span>🟡 WATCH PHASE: MODERATE HAZARD</span>
-                </div>
-              )}
+            {/* Basemap tile */}
+            <TileLayer url={tileUrl} attribution={tileAttr} maxZoom={19} />
 
-              {/* Dynamic Score and Probability */}
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Hazard Score:</span>
-                  <span className="font-bold text-slate-900 font-mono text-sm">
-                    {selectedLocation.risk_score} / 100
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Failure Probability:</span>
-                  <span className="font-bold text-amber-800 font-mono text-sm">
-                    {selectedLocation.landslide_probability || 45}%
-                  </span>
-                </div>
-              </div>
+            {/* ── NER State Boundary Shading ── */}
+            {layers.nerBoundaries && NER_POLYGONS.map((p) => (
+              <Polygon key={p.name} positions={p.coords}
+                pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.06, weight: 1.5, dashArray: "5,5" }}>
+                <Popup>
+                  <div className="text-xs font-bold">{p.name}</div>
+                  <div className="text-[10px] text-slate-500">NER State Boundary</div>
+                </Popup>
+              </Polygon>
+            ))}
 
-              {/* Geotechnical Terrain Profile */}
-              <div className="space-y-2 text-xs">
-                <p className="font-bold text-slate-700">Geotechnical Attributes:</p>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                    <span className="text-slate-500 block text-[10px]">Slope Gradient:</span>
-                    <span className="font-bold text-slate-900">
-                      {selectedLocation.slope_angle_deg || selectedLocation.slope || 34}°
-                    </span>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                    <span className="text-slate-500 block text-[10px]">Elevation:</span>
-                    <span className="font-bold text-slate-900">
-                      {selectedLocation.elevation_m || selectedLocation.elevation || 1200}m
-                    </span>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                    <span className="text-slate-500 block text-[10px]">Lithology:</span>
-                    <span className="font-bold text-slate-900 truncate block">
-                      {selectedLocation.lithology || "Weathered Shale"}
-                    </span>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                    <span className="text-slate-500 block text-[10px]">River Basin:</span>
-                    <span className="font-bold text-slate-900 truncate block">
-                      {selectedLocation.river || "Teesta / Barak"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            {/* ── Flood Zone Polygons ── */}
+            {layers.floodZones && floodZones.map((f, i) => {
+              const coords = f.geometry?.coordinates?.[0]?.map(([lng, lat]) => [lat, lng]) || [];
+              if (!coords.length) return null;
+              return (
+                <Polygon key={i} positions={coords}
+                  pathOptions={{ color: "#0284c7", fillColor: "#bae6fd", fillOpacity: 0.35, weight: 1.5 }}>
+                  <Popup>
+                    <div className="text-xs font-bold text-blue-800">{f.properties?.name ?? "Flood Zone"}</div>
+                    <div className="text-[10px] text-slate-600">{f.properties?.state ?? ""}</div>
+                    <div className="text-[10px] text-blue-700 font-semibold">Flood Risk: {f.properties?.risk_level ?? "High"}</div>
+                  </Popup>
+                </Polygon>
+              );
+            })}
 
-              {/* Action Directives */}
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-950">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-800 mb-1">
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>Disaster Protocol:</span>
-                </div>
-                <span>
-                  {selectedLocation.risk_score >= 60
-                    ? "Activate perimeter road barriers and warn downhill settlements."
-                    : "Standard IoT telemetry monitoring active."}
-                </span>
+            {/* ── Seismic Zone V shading (NER) ── */}
+            {layers.seismicZones && (
+              <Polygon
+                positions={[[24.0,88.0],[29.5,88.0],[29.5,98.0],[24.0,98.0]]}
+                pathOptions={{ color: "#7c3aed", fillColor: "#ddd6fe", fillOpacity: 0.08, weight: 1, dashArray: "8,4" }}>
+                <Popup><div className="text-xs font-bold text-purple-800">BIS Seismic Zone V — North East India</div><div className="text-[10px]">High seismic hazard region (BIS IS 1893:2016)</div></Popup>
+              </Polygon>
+            )}
+
+            {/* ── Highways ── */}
+            {layers.highways && HIGHWAYS.map((h) => (
+              <Polyline key={h.name} positions={h.coords}
+                pathOptions={{ color: h.color, weight: 3, opacity: 0.85, dashArray: h.risk === "CRITICAL" ? "8,4" : undefined }}>
+                <Popup>
+                  <div className="text-xs font-bold">{h.name}</div>
+                  <div className={`text-[10px] font-bold mt-0.5 ${h.risk === "CRITICAL" ? "text-red-700" : h.risk === "HIGH" ? "text-orange-700" : "text-amber-700"}`}>
+                    Risk: {h.risk}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Landslide-vulnerable corridor</div>
+                </Popup>
+              </Polyline>
+            ))}
+
+            {/* ── Rivers ── */}
+            {layers.rivers && RIVERS.map((r) => (
+              <Polyline key={r.name} positions={r.coords}
+                pathOptions={{ color: r.color, weight: 2.5, opacity: 0.75 }}>
+                <Popup><div className="text-xs font-bold text-blue-800">{r.name}</div><div className="text-[10px] text-slate-500">River System</div></Popup>
+              </Polyline>
+            ))}
+
+            {/* ── Rainfall Radar Circles ── */}
+            {layers.rainfallCircles && locations.filter((l) => l.rainfall_24h > 60).map((l) => (
+              <Circle key={`rain-${l.id}`}
+                center={[l.latitude, l.longitude]}
+                radius={l.rainfall_24h ? Math.min(l.rainfall_24h * 250, 40000) : 8000}
+                pathOptions={{ color: "#0369a1", fillColor: "#bae6fd", fillOpacity: 0.3, weight: 1 }} />
+            ))}
+
+            {/* ── Monitoring Stations ── */}
+            {layers.stations && filteredLocs.map((l) => (
+              <Marker key={l.id} position={[l.latitude, l.longitude]} icon={scoreIcon(l.risk_score ?? 50)}
+                eventHandlers={{ click: () => onSelectLocation?.(l) }}>
+                <Popup maxWidth={260}>
+                  <div className="text-xs space-y-1.5 p-1">
+                    <div className="font-black text-slate-900 text-sm">{l.name}</div>
+                    <div className="text-slate-500">{l.state} {l.district ? `· ${l.district}` : ""}</div>
+                    {l.highway && <div className="text-blue-700 font-semibold">{l.highway}</div>}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                      <span className="text-slate-600">Risk Score:</span>
+                      <span className={`font-black text-lg ${l.risk_score >= 80 ? "text-red-700" : l.risk_score >= 60 ? "text-orange-700" : "text-amber-700"}`}>
+                        {l.risk_score}/100
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Elev: {l.elevation_m}m · Slope: {l.slope_deg}°
+                    </div>
+                    <button
+                      onClick={() => navigate(`/app/analyze?q=${encodeURIComponent(l.name)}`)}
+                      className="w-full mt-1 py-1.5 bg-emerald-700 text-white text-[11px] font-bold rounded-lg flex items-center justify-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Full AI Analysis
+                    </button>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* ── Emergency Facilities ── */}
+            {layers.facilities && facilities.map((f) => f.latitude && f.longitude && (
+              <Marker key={f.id} position={[f.latitude, f.longitude]} icon={ICONS.shelter}>
+                <Popup>
+                  <div className="text-xs font-bold">{f.name}</div>
+                  <div className="text-[10px] text-slate-500">{f.facility_type} · Cap: {f.capacity}</div>
+                  {f.contact && <div className="text-[10px] text-emerald-700">📞 {f.contact}</div>}
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* ── Inspect marker ── */}
+            {inspectLatLng && (
+              <Marker position={[inspectLatLng.lat, inspectLatLng.lng]} icon={ICONS.inspect}>
+                <Popup>
+                  <div className="text-xs font-bold">Inspecting…</div>
+                  <div className="text-[10px] text-slate-500">{inspectLatLng.lat.toFixed(4)}°N, {inspectLatLng.lng.toFixed(4)}°E</div>
+                </Popup>
+              </Marker>
+            )}
+          </MapContainer>
+
+          {/* Inspect loading overlay */}
+          {inspecting && (
+            <div className="absolute inset-0 bg-slate-900/30 flex items-center justify-center rounded-xl z-[500]">
+              <div className="bg-white rounded-xl p-4 shadow-xl text-xs font-bold text-slate-800 flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                Running AI inference for selected coordinates…
               </div>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-4">
-              <Mountain className="w-8 h-8 text-slate-300 mb-2" />
-              <h4 className="text-xs font-bold text-slate-700">Select Any GIS Station / Pin</h4>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
-                Click any marker, road segment, or village on the GIS map to inspect live risk telemetry and geotechnical parameters.
-              </p>
             </div>
           )}
 
-          <div className="pt-3 border-t border-slate-100 text-[10px] text-slate-400 flex justify-between">
-            <span>Grid: GSI / IMD Telemetry</span>
-            <span>Refreshed Live</span>
+          {/* Map legend */}
+          <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur-sm rounded-xl p-2.5 border border-slate-200 shadow-md text-[10px] font-bold space-y-1">
+            <div className="text-slate-500 uppercase tracking-wider mb-1">Risk Legend</div>
+            {[
+              { color: "#dc2626", label: "Critical ≥80" },
+              { color: "#ea580c", label: "High ≥60" },
+              { color: "#ca8a04", label: "Moderate ≥40" },
+              { color: "#16a34a", label: "Low <40" },
+            ].map((l) => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: l.color }} />
+                <span className="text-slate-700">{l.label}</span>
+              </div>
+            ))}
+            <div className="border-t border-slate-100 pt-1 mt-1 space-y-1">
+              <div className="flex items-center gap-1.5"><div className="w-5 h-0.5 bg-red-600" /><span>Highway (High Risk)</span></div>
+              <div className="flex items-center gap-1.5"><div className="w-5 h-0.5 bg-blue-600" /><span>River</span></div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-100 border border-blue-400" /><span>Flood Zone</span></div>
+            </div>
+          </div>
+
+          {/* Pan-India quick jump buttons */}
+          <div className="absolute top-3 left-3 z-[400] space-y-1">
+            {[
+              { key: "ner",                 label: "NER",        emoji: "🏔️" },
+              { key: "pan_india",           label: "India",      emoji: "🇮🇳" },
+              { key: "northeast_himalayas", label: "NE Himal",   emoji: "⛰️" },
+              { key: "uttarakhand",         label: "UK/HP",      emoji: "🌨️" },
+              { key: "western_ghats",       label: "W.Ghats",    emoji: "🌿" },
+            ].map((b) => (
+              <button key={b.key} onClick={() => setViewKey(b.key)}
+                className={`block text-left px-2 py-1 rounded-lg text-[10px] font-bold border shadow transition ${
+                  viewKey === b.key ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
+                }`}>
+                {b.emoji} {b.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Right Side: Leaflet Map Container */}
-        <div className="lg:col-span-3 rounded-xl overflow-hidden border border-slate-200 shadow-xs relative">
-          <MapContainer
-            center={centerCoordinates}
-            zoom={8}
-            className="w-full h-full"
-            style={{ height: "100%", width: "100%" }}
-          >
-            {/* Tile Layer: Streets vs Satellite */}
-            {baseMap === "satellite" ? (
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                attribution="&copy; Esri World Imagery"
-              />
+        {/* ── Side Panel ── */}
+        {sidePanel && (
+          <div className="w-72 shrink-0 flex flex-col gap-3 max-h-[600px] overflow-y-auto">
+            {/* Inspect result */}
+            {inspectResult ? (
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs text-xs space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 font-black text-slate-900">
+                    <Crosshair className="w-3.5 h-3.5 text-purple-600" />
+                    Inspect Result
+                  </div>
+                  <button onClick={() => setInspectResult(null)} className="text-slate-400 hover:text-slate-700">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="font-black text-slate-900 text-sm">{inspectResult.location?.name ?? "Unknown"}</div>
+                <div className="text-slate-500">{inspectResult.location?.state ?? ""}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: "Overall Risk", val: `${inspectResult.multi_hazard_scorecard?.overall_risk_score ?? "--"}/100` },
+                    { label: "Landslide", val: `${inspectResult.multi_hazard_scorecard?.landslide_score ?? "--"}/100` },
+                    { label: "Flood", val: `${inspectResult.multi_hazard_scorecard?.flood_score ?? "--"}/100` },
+                    { label: "24h Rain", val: `${inspectResult.live_meteorology?.rainfall_24h_mm ?? "--"} mm` },
+                  ].map((m) => (
+                    <div key={m.label} className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-[9px] text-slate-400 font-bold block">{m.label}</span>
+                      <span className="font-black text-slate-900">{m.val}</span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => navigate(`/app/analyze?q=${encodeURIComponent(inspectResult.location?.name ?? "")}`)}
+                  className="w-full py-2 bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 transition hover:bg-emerald-800">
+                  <Sparkles className="w-3.5 h-3.5" /> Full Analysis
+                </button>
+              </div>
             ) : (
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution="&copy; OpenStreetMap contributors"
-              />
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs text-slate-500 text-center">
+                {inspectMode
+                  ? "Click anywhere on the map to run AI inference for that coordinate."
+                  : <span>Enable <strong>Click-to-Inspect</strong> to analyze any map point.</span>}
+              </div>
             )}
 
-            {/* 1. Monitored Station Markers (Landslide Risk) */}
-            {layers.landslideRisk &&
-              filteredLocs.map((loc) => {
-                const icon =
-                  loc.risk_score >= 80 ? ICONS.critical :
-                  loc.risk_score >= 60 ? ICONS.high :
-                  loc.risk_score >= 40 ? ICONS.moderate : ICONS.low;
+            {/* Selected station panel */}
+            {selectedLocation && (
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs text-xs space-y-2">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <span className="font-black text-slate-900">Selected Station</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    selectedLocation.risk_score >= 80 ? "bg-red-100 text-red-700" :
+                    selectedLocation.risk_score >= 60 ? "bg-orange-100 text-orange-700" :
+                    "bg-amber-100 text-amber-700"
+                  }`}>{selectedLocation.risk_level ?? RC(selectedLocation.risk_score ?? 0).label}</span>
+                </div>
+                <div className="font-black text-slate-900 text-sm">{selectedLocation.name}</div>
+                <div className="text-slate-500">{selectedLocation.state}</div>
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <div className="bg-slate-50 p-1.5 rounded"><span className="text-slate-400 block">Risk</span><span className="font-black text-slate-900">{selectedLocation.risk_score}/100</span></div>
+                  <div className="bg-slate-50 p-1.5 rounded"><span className="text-slate-400 block">Elevation</span><span className="font-black text-slate-900">{selectedLocation.elevation_m}m</span></div>
+                  <div className="bg-slate-50 p-1.5 rounded"><span className="text-slate-400 block">Slope</span><span className="font-black text-slate-900">{selectedLocation.slope_deg}°</span></div>
+                  <div className="bg-slate-50 p-1.5 rounded"><span className="text-slate-400 block">Highway</span><span className="font-black text-slate-900 truncate">{selectedLocation.highway ?? "—"}</span></div>
+                </div>
+                <button onClick={() => navigate(`/app/analyze?q=${encodeURIComponent(selectedLocation.name)}`)}
+                  className="w-full py-1.5 bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 hover:bg-emerald-800 transition">
+                  <Sparkles className="w-3 h-3" /> Analyze Location
+                </button>
+              </div>
+            )}
 
-                return (
-                  <Marker
-                    key={loc.id || loc.name}
-                    position={[loc.latitude, loc.longitude]}
-                    icon={icon}
-                    eventHandlers={{
-                      click: () => onSelectLocation && onSelectLocation(loc),
-                    }}
-                  >
-                    <Popup>
-                      <div className="text-xs font-sans space-y-1.5 p-0.5">
-                        <strong className="text-slate-900 block text-sm">{loc.name}</strong>
-                        <span className="text-slate-500 block text-[11px]">{loc.district}, {loc.state}</span>
-                        <div className="pt-1.5 border-t border-slate-200 flex items-center justify-between">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                            loc.risk_score >= 60 ? "bg-red-100 text-red-800 border border-red-300" :
-                            loc.risk_score < 40 ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
-                            "bg-amber-100 text-amber-800 border border-amber-300"
-                          }`}>
-                            {loc.risk_score >= 60 ? "🔴 DANGER ZONE" : loc.risk_score < 40 ? "🟢 DANGER FREE" : "🟡 MODERATE"}
-                          </span>
-                          <strong className="text-slate-900 font-mono">{loc.risk_score}/100</strong>
+            {/* Top risk stations mini list */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-slate-100 text-[11px] font-black text-slate-900">
+                Top Risk Stations
+              </div>
+              <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                {[...locations]
+                  .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0))
+                  .slice(0, 8)
+                  .map((l) => {
+                    const rc = RC(l.risk_score ?? 0);
+                    return (
+                      <button key={l.id} onClick={() => onSelectLocation?.(l)}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 transition flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-bold text-slate-900 truncate">{l.name}</div>
+                          <div className="text-[9px] text-slate-500 truncate">{l.state}</div>
                         </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[11px] font-black text-slate-900 font-mono">{l.risk_score}</span>
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: rc.stroke }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
 
-            {/* 2. Vulnerable Roads & Highways */}
-            {layers.roads &&
-              HIGHWAY_CORRIDORS.map((hwy, idx) => (
-                <Polyline
-                  key={idx}
-                  positions={hwy.coords}
-                  pathOptions={{
-                    color: hwy.color,
-                    weight: 5,
-                    opacity: 0.85,
-                    dashArray: hwy.color === "#dc2626" ? "6, 6" : undefined,
-                  }}
-                >
-                  <Popup>
-                    <div className="text-xs font-sans space-y-1">
-                      <strong className="text-slate-900 block">{hwy.name}</strong>
-                      <span className="text-red-700 font-bold block">{hwy.status}</span>
-                      <span className="text-[10px] text-slate-500">Monitored corridor</span>
+            {/* Highway risk summary */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-slate-100 text-[11px] font-black text-slate-900">
+                Highway Risk Corridor
+              </div>
+              <div className="divide-y divide-slate-100">
+                {HIGHWAYS.slice(0, 5).map((h) => (
+                  <div key={h.name} className="px-3 py-2 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] font-bold text-slate-900 truncate">{h.name.split("·")[0].trim()}</div>
+                      <div className="text-[9px] text-slate-500 truncate">{h.name.split("·")[1]?.trim() ?? ""}</div>
                     </div>
-                  </Popup>
-                </Polyline>
-              ))}
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${
+                      h.risk === "CRITICAL" ? "bg-red-100 text-red-700" :
+                      h.risk === "HIGH" ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700"
+                    }`}>{h.risk}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
-            {/* 3. River Drainage Network */}
-            {layers.rivers &&
-              RIVERS.map((riv, idx) => (
-                <Polyline
-                  key={idx}
-                  positions={riv.coords}
-                  pathOptions={{
-                    color: riv.color,
-                    weight: 4,
-                    opacity: 0.7,
-                  }}
-                >
-                  <Popup>
-                    <div className="text-xs font-sans">
-                      <strong className="text-blue-900">{riv.name}</strong>
-                    </div>
-                  </Popup>
-                </Polyline>
-              ))}
+        {/* Collapse/expand side panel button */}
+        <button onClick={() => setSidePanel((p) => !p)}
+          className="self-start mt-1 p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-900 hover:border-slate-400 transition shadow-xs">
+          {sidePanel ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
 
-            {/* 4. Villages & Settlements */}
-            {layers.villages &&
-              VILLAGES.map((v, idx) => (
-                <Marker key={idx} position={[v.lat, v.lon]} icon={ICONS.village}>
-                  <Popup>
-                    <div className="text-xs font-sans">
-                      <strong className="text-indigo-900 block">🏘️ {v.name}</strong>
-                      <span className="text-slate-500 block">Population: {v.pop.toLocaleString()}</span>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-
-            {/* 5. Rainfall Radar Simulation Buffers */}
-            {layers.rainfall && (
-              <>
-                <Circle
-                  center={[27.0360, 88.2627]}
-                  radius={18000}
-                  pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.15 }}
-                />
-                <Circle
-                  center={[26.9800, 88.4800]}
-                  radius={22000}
-                  pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.2 }}
-                />
-                <Circle
-                  center={[25.3000, 91.7000]}
-                  radius={25000}
-                  pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.2 }}
-                />
-              </>
-            )}
-
-            {/* 6. Flood Inundation Zones */}
-            {layers.floodRisk && (
-              <>
-                <Polygon
-                  positions={[
-                    [24.8100, 92.7600],
-                    [24.8400, 92.8100],
-                    [24.8600, 92.7700],
-                    [24.8200, 92.7400]
-                  ]}
-                  pathOptions={{ color: "#0284c7", fillColor: "#0284c7", fillOpacity: 0.3 }}
-                />
-                <Polygon
-                  positions={[
-                    [26.9300, 94.1800],
-                    [26.9700, 94.2500],
-                    [26.9800, 94.2000],
-                    [26.9400, 94.1500]
-                  ]}
-                  pathOptions={{ color: "#0284c7", fillColor: "#0284c7", fillOpacity: 0.35 }}
-                />
-              </>
-            )}
-          </MapContainer>
+      {/* Bottom status bar */}
+      <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium px-1">
+        <div className="flex items-center gap-3">
+          <span>View: <strong className="text-slate-600">{MAP_VIEWS[viewKey]?.label}</strong></span>
+          <span>Hazard: <strong className="text-slate-600">{HAZARD_FILTERS.find((h) => h.key === hazardFilter)?.label}</strong></span>
+          <span>Stations shown: <strong className="text-slate-600">{filteredLocs.length}</strong></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>© OpenStreetMap · CARTO · Esri · BIS IS 1893:2016</span>
         </div>
       </div>
     </div>
