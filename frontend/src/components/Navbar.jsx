@@ -87,15 +87,15 @@ export default function Navbar({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold tracking-tight text-white m-0">
-                BHU-SURAKSHA
+              <h1 className="text-base font-bold tracking-tight text-white m-0">
+                NER LANDSLIDE EARLY WARNING SYSTEM
               </h1>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono font-extrabold">
-                v2.4
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30 font-mono font-bold">
+                AI v2.4
               </span>
             </div>
-            <p className="text-[11px] text-emerald-400 font-semibold m-0">
-              Predict Risk · Warn Early · Protect Lives — NER & Pan-India Grid
+            <p className="text-[11px] text-slate-400 m-0">
+              National Disaster Management Authority | North Eastern Council
             </p>
           </div>
         </div>

@@ -103,34 +103,6 @@ HISTORY = [
 
 
 def seed(db):
-    users = [
-        ("admin", "Control Room Admin", "admin@ner-ews.gov.in", "admin123", "Admin", "MHA / NDMA Nodal"),
-        ("dma", "State DMA Officer", "dma@ner-ews.gov.in", "dma123", "Disaster Management Authority", "NER SDMA"),
-        ("officer", "Field Officer", "officer@ner-ews.gov.in", "officer123", "Field Officer", "District Emergency Ops"),
-        ("citizen", "Community Reporter", "citizen@ner-ews.gov.in", "citizen123", "Citizen", "Public"),
-        # User-specified team email accounts
-        ("epsita", "Epsita Maity", "epsitamaity629@gmail.com", "password123", "Admin", "NER Land Risk Disaster Command"),
-        ("sanjana", "Sanjana Jana", "sanjanajana464@gmail.com", "password123", "Disaster Management Authority", "State DMA Control Room"),
-        ("soumya", "Soumya Saha", "soumyasaha205@gmail.com", "password123", "Field Officer", "Geotech & Sensor Engineering"),
-        ("ananya", "Ananya Patra", "patraananya37@gamil.com", "password123", "Field Officer", "GIS & Satellite Mapping"),
-        ("monira", "Monira Protappur", "monira.protappur@gmail.com", "password123", "Citizen", "Community Public Watch"),
-    ]
-
-    # Ensure all users exist
-    for u, fn, em, pw, role, org in users:
-        existing = db.query(User).filter((User.username == u) | (User.email == em)).first()
-        if not existing:
-            db.add(
-                User(
-                    username=u,
-                    full_name=fn,
-                    email=em,
-                    hashed_password=hash_password(pw),
-                    role=role,
-                    organization=org,
-                )
-            )
-
     if not db.query(SystemSetting).first():
         db.add(SystemSetting())
 

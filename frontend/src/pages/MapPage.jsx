@@ -22,14 +22,16 @@ import {
   Sparkles,
   Info,
   Radio,
-  Globe,
-  Compass
+  Globe2,
+  ArrowRight
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { get, getFloodZones, inspectCoordinate, getGazetteer } from "../api";
 import { useAuth } from "../AuthContext";
+import GISRiskMap from "../components/GISRiskMap";
 
-const PAN_INDIA_CENTER = [22.5, 82.5];
 const NER_CENTER = [26.2, 92.9];
+const INDIA_CENTER = [22.5, 80.0];
 
 function styleLandslide(f) {
   const s = f.properties.risk_score || 0;
@@ -55,32 +57,29 @@ function MapClickInspector({ onInspect }) {
 }
 
 // Sub-component to animate flyTo
-function MapFlyTo({ position, zoom = 10 }) {
+function MapFlyTo({ position }) {
   const map = useMap();
   useEffect(() => {
     if (position) {
-      map.flyTo(position, zoom, { duration: 1.5 });
+      map.flyTo(position, 10, { duration: 1.5 });
     }
-  }, [position, zoom, map]);
+  }, [position, map]);
   return null;
 }
 
-const isValidGeoJSON = (data) => data && data.type === "FeatureCollection" && Array.isArray(data.features);
-
 export default function MapPage() {
   const { t } = useAuth();
+  const navigate = useNavigate();
+  const [mapMode, setMapMode] = useState("advanced"); // "advanced" | "classic"
   const [stations, setStations] = useState(null);
   const [polys, setPolys] = useState(null);
   const [floodPolys, setFloodPolys] = useState(null);
   const [sensors, setSensors] = useState(null);
   const [facs, setFacs] = useState(null);
   const [routes, setRoutes] = useState(null);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const [base, setBase] = useState("osm");
-
-  // Map Navigation Focus State
-  const [mapPosition, setMapPosition] = useState(NER_CENTER);
-  const [mapZoom, setMapZoom] = useState(7);
-  const [activeScope, setActiveScope] = useState("ner"); // 'all_india' | 'ner' | 'hotspots'
 
   // Map Search & Interactive Inspection State
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,6 +96,7 @@ export default function MapPage() {
     get("/api/map/sensors").then(setSensors).catch(console.error);
     get("/api/map/facilities").then(setFacs).catch(console.error);
     get("/api/map/evacuation-routes").then(setRoutes).catch(console.error);
+    get("/api/dashboard/locations").then(setLocations).catch(console.error);
   }, []);
 
   const handleQueryChange = async (val) => {
@@ -104,7 +104,7 @@ export default function MapPage() {
     if (val.trim().length > 1) {
       try {
         const list = await getGazetteer(val);
-        setSuggestions(list.slice(0, 7));
+        setSuggestions(list.slice(0, 6));
         setShowSuggestions(true);
       } catch (err) {
         console.error(err);
@@ -126,8 +126,6 @@ export default function MapPage() {
         const place = list[0];
         setSearchQuery(place.name);
         setSearchedPin([place.lat, place.lon]);
-        setMapPosition([place.lat, place.lon]);
-        setMapZoom(10);
         const data = await inspectCoordinate(place.lat, place.lon);
         setInspectedData(data);
       }
@@ -142,8 +140,6 @@ export default function MapPage() {
     setShowSuggestions(false);
     setSearchQuery(place.name);
     setSearchedPin([place.lat, place.lon]);
-    setMapPosition([place.lat, place.lon]);
-    setMapZoom(10);
     setInspectLoading(true);
     try {
       const data = await inspectCoordinate(place.lat, place.lon);
@@ -168,128 +164,60 @@ export default function MapPage() {
     }
   };
 
-  const setScopeFocus = (scopeType) => {
-    setActiveScope(scopeType);
-    if (scopeType === "all_india") {
-      setMapPosition(PAN_INDIA_CENTER);
-      setMapZoom(5);
-    } else if (scopeType === "ner") {
-      setMapPosition(NER_CENTER);
-      setMapZoom(7);
-    }
-  };
-
   return (
     <div className="space-y-4">
       {/* Top Map Control Bar */}
-      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 uppercase tracking-wider mb-0.5">
             <Layers className="w-4 h-4 text-emerald-700" />
-            <span>BHU-SURAKSHA · Pan-India & NER Geo-Spatial GIS Platform</span>
+            <span>Interactive Multi-Hazard GIS Risk Platform</span>
           </div>
-          <h2 className="text-base font-extrabold text-slate-900 m-0">
-            Real-Time Landslide Vulnerability & River Basin Flood Inundation Grid
+          <h2 className="text-base font-bold text-slate-900 m-0">
+            Real-Time Landslide Susceptibility & River Basin Flood Inundation Map
           </h2>
           <p className="text-xs text-slate-500 m-0">
-            Search any place across India or click on the map to inspect live terrain telemetry and multi-hazard risk predictions.
+            Click anywhere on the map or search any location to run instant AI prediction on exact coordinates.
           </p>
         </div>
 
-        {/* Map Scope Switcher & Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          {/* Scope Focus Buttons */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-lg shrink-0">
-            <button
-              onClick={() => setScopeFocus("all_india")}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
-                activeScope === "all_india"
-                  ? "bg-white text-slate-900 shadow-xs border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
-              <span>Pan-India Grid</span>
-            </button>
-            <button
-              onClick={() => setScopeFocus("ner")}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
-                activeScope === "ner"
-                  ? "bg-white text-slate-900 shadow-xs border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Mountain className="w-3.5 h-3.5 text-emerald-600" />
-              <span>NER 8-States</span>
-            </button>
-          </div>
+        {/* Map Search Bar */}
+        <div className="relative w-full sm:w-80">
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              placeholder="Search any location or coordinates..."
+              className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </form>
 
-          {/* Search Bar */}
-          <div className="relative w-full sm:w-72">
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleQueryChange(e.target.value)}
-                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                placeholder="Search any place in India (e.g. Darjeeling, Kolkata, Delhi, Shimla)..."
-                className="w-full bg-slate-50 border border-slate-300 focus:border-emerald-600 focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </form>
-
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full mt-1 left-0 right-0 z-[1500] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                {suggestions.map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleSelectLocation(item)}
-                    className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs transition"
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="font-bold text-slate-800 truncate">{item.name}</span>
-                      <span className="text-slate-500 text-[11px] truncate">
-                        {item.state ? `(${item.state})` : ""}
-                      </span>
-                    </div>
-                    <span className="text-[10px] bg-slate-100 font-semibold px-1.5 py-0.5 rounded text-slate-600 shrink-0">
-                      {item.elevation ? `${Math.round(item.elevation)}m` : "DEM"}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute top-full mt-1 left-0 right-0 z-[1500] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
+              {suggestions.map((item, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleSelectLocation(item)}
+                  className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs transition"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="font-bold text-slate-800 truncate">{item.name}</span>
+                    <span className="text-slate-500 text-[11px] truncate">
+                      {item.state ? `(${item.state})` : ""}
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <span className="text-[10px] bg-slate-100 font-semibold px-1.5 py-0.5 rounded text-slate-600 shrink-0">
+                    {item.elevation ? `${Math.round(item.elevation)}m` : "DEM"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
-
-      {/* Quick Hotspot Chips */}
-      <div className="flex items-center gap-2 flex-wrap text-xs bg-white rounded-xl p-2.5 border border-slate-200">
-        <span className="text-slate-500 font-semibold text-[11px]">Direct Hotspot Focus:</span>
-        {[
-          { name: "🏔️ Darjeeling (WB)", lat: 27.0410, lon: 88.2663 },
-          { name: "🏔️ Gangtok (Sikkim)", lat: 27.3389, lon: 88.6065 },
-          { name: "🌿 Wayanad (Kerala)", lat: 11.6854, lon: 76.1320 },
-          { name: "🏛️ Kedarnath (Uttarakhand)", lat: 30.7346, lon: 79.0669 },
-          { name: "🌲 Shimla (HP)", lat: 31.1048, lon: 77.1734 },
-          { name: "🌊 Guwahati (Assam)", lat: 26.1445, lon: 91.7362 },
-          { name: "🌄 Shillong (Meghalaya)", lat: 25.5788, lon: 91.8933 },
-          { name: "🏙️ Kolkata (WB)", lat: 22.5726, lon: 88.3639 },
-          { name: "🏖️ Mumbai (MH)", lat: 19.0760, lon: 72.8777 },
-        ].map((h) => (
-          <button
-            key={h.name}
-            type="button"
-            onClick={() => {
-              setSearchQuery(h.name.split(" ")[1]);
-              handleSelectLocation({ name: h.name.split(" ")[1], lat: h.lat, lon: h.lon });
-            }}
-            className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200 text-slate-700 text-[11px] font-medium transition"
-          >
-            {h.name}
-          </button>
-        ))}
       </div>
 
       {/* Main Map Box & Side Inspector */}
@@ -388,7 +316,7 @@ export default function MapPage() {
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block">Actionable Directive</span>
                 <p className="text-[11px] text-slate-700 bg-slate-50 p-2 rounded border border-slate-200">
-                  {inspectedData.emergency_priority?.rationale}
+                  {inspectedData.evacuation_directives[0]}
                 </p>
               </div>
             </div>
@@ -400,7 +328,7 @@ export default function MapPage() {
               <div>
                 <h4 className="font-bold text-slate-800 text-sm">Interactive Risk Inspector</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Click on any mountain slope, river valley, highway pass, or search above to inspect live risk telemetry across India.
+                  Click on any mountain slope, river valley, highway pass, or search above to inspect live risk telemetry.
                 </p>
               </div>
             </div>
@@ -408,7 +336,7 @@ export default function MapPage() {
 
           <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 flex justify-between">
             <span>IMD Radar + DEM</span>
-            <span>BHU-SURAKSHA Grid</span>
+            <span>NER Command Grid</span>
           </div>
         </div>
 
@@ -434,7 +362,7 @@ export default function MapPage() {
             </button>
           </div>
 
-          <MapContainer center={mapPosition} zoom={mapZoom} className="h-full w-full" scrollWheelZoom>
+          <MapContainer center={NER_CENTER} zoom={7} className="h-full w-full" scrollWheelZoom>
             <TileLayer
               attribution="&copy; OpenStreetMap contributors / OpenTopoMap"
               url={
@@ -445,7 +373,7 @@ export default function MapPage() {
             />
 
             <MapClickInspector onInspect={handleMapClick} />
-            {searchedPin && <MapFlyTo position={searchedPin} zoom={mapZoom} />}
+            {searchedPin && <MapFlyTo position={searchedPin} />}
 
             {/* Clicked / Searched Coordinate Marker */}
             {searchedPin && inspectedData && (
@@ -465,7 +393,7 @@ export default function MapPage() {
 
             <LayersControl position="topright">
               {/* Landslide Hazard Polygons */}
-              {isValidGeoJSON(polys) && (
+              {polys && (
                 <LayersControl.Overlay checked name="⛰️ Landslide Hazard Zones">
                   <GeoJSON
                     data={polys}
@@ -481,7 +409,7 @@ export default function MapPage() {
               )}
 
               {/* Flood Inundation Zones */}
-              {isValidGeoJSON(floodPolys) && (
+              {floodPolys && (
                 <LayersControl.Overlay checked name="🌊 Flood Inundation River Basins">
                   <GeoJSON
                     data={floodPolys}
@@ -497,7 +425,7 @@ export default function MapPage() {
               )}
 
               {/* Monitored Stations */}
-              {isValidGeoJSON(stations) && (
+              {stations && (
                 <LayersControl.Overlay checked name="📍 Monitored Stations">
                   <GeoJSON
                     data={stations}
@@ -521,7 +449,7 @@ export default function MapPage() {
               )}
 
               {/* IoT Sensors */}
-              {isValidGeoJSON(sensors) && (
+              {sensors && (
                 <LayersControl.Overlay name="📡 IoT Inclinometers & Piezometers">
                   <GeoJSON
                     data={sensors}
@@ -545,7 +473,7 @@ export default function MapPage() {
               )}
 
               {/* Emergency Facilities & Shelters */}
-              {isValidGeoJSON(facs) && (
+              {facs && (
                 <LayersControl.Overlay checked name="🏥 Safe Shelters & NDRF Bases">
                   <GeoJSON
                     data={facs}
@@ -569,7 +497,7 @@ export default function MapPage() {
               )}
 
               {/* Evacuation Corridors */}
-              {isValidGeoJSON(routes) && (
+              {routes && (
                 <LayersControl.Overlay name="🛣️ Safe Evacuation Corridors">
                   <GeoJSON data={routes} style={{ color: "#059669", weight: 3, dashArray: "6 4" }} />
                 </LayersControl.Overlay>

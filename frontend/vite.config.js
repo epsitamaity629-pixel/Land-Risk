@@ -6,18 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        configure: (proxy) => {
-          proxy.on("error", (err, req, res) => {
-            if (!res.headersSent) {
-              res.writeHead(503, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "Backend offline, fallback active" }));
-            }
-          });
-        }
-      },
+      "/api": "http://127.0.0.1:8000",
       "/uploads": "http://127.0.0.1:8000",
       "/ws": { target: "ws://127.0.0.1:8000", ws: true },
     },

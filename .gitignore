@@ -9,3 +9,5 @@ dist/
 backend/ml_artifacts/
 uploads/
 .env
+
+.vercel
