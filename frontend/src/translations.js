@@ -2,8 +2,8 @@
 
 export const TRANSLATIONS = {
   en: {
-    appTitle: "LANDGUARD AI · Multi-Hazard Intelligence",
-    subtitle: "AI Early Warning, Location & Route Risk Intelligence Grid",
+    appTitle: "BHU-SURAKSHA · Multi-Hazard Intelligence Grid",
+    subtitle: "Predict Risk · Warn Early · Protect Lives — NER & Pan-India Grid",
     commandCenter: "Command Center",
     gisMap: "GIS Risk Map",
     aiStudio: "AI Prediction Studio",
@@ -90,8 +90,8 @@ export const TRANSLATIONS = {
     syncSuccess: "offline reports successfully synced to central database!",
   },
   bn: {
-    appTitle: "ল্যান্ডগার্ড এআই · মাল্টি-হ্যাজার্ড ইন্টেলিজেন্স",
-    subtitle: "ভূমিধস ও বন্যা ঝুঁকি পূর্বাভাস এবং দুর্যোগ ব্যবস্থাপনা গ্রিড",
+    appTitle: "ভূ-সুরক্ষা (BHU-SURAKSHA) · মাল্টি-হ্যাজার্ড গ্রিড",
+    subtitle: "ঝুঁকি পূর্বাভাস · দ্রুত সতর্কালাপ · জীবন রক্ষা — এনইআর ও প্যান-ইন্ডিয়া গ্রিড",
     commandCenter: "কমান্ড সেন্টার",
     gisMap: "জিআইএস ম্যাপ",
     aiStudio: "এআই প্রেডিকশন স্টুডিও",

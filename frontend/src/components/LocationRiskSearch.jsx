@@ -41,7 +41,8 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
-import { searchLocationAndPredict, getGazetteer, analyzeRouteRisk } from "../api";
+import { searchLocationAndPredict, getGazetteer, analyzeRouteRisk, getBackendStatus } from "../api";
+import { generateLocationPredictionFallback, generateRouteAnalysisFallback } from "../services/fallbackEngine";
 import { useAuth } from "../AuthContext";
 import RiskGauge from "./RiskGauge";
 
@@ -99,7 +100,12 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
         onLocationSelected(data.location);
       }
     } catch (e) {
-      console.error("Search prediction failed:", e);
+      console.error("Search prediction failed, using fallback:", e);
+      const fallbackData = await generateLocationPredictionFallback(term, lat, lon);
+      setResult(fallbackData);
+      if (onLocationSelected && fallbackData.location) {
+        onLocationSelected(fallbackData.location);
+      }
     } finally {
       setLoading(false);
     }
@@ -113,7 +119,8 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
       const data = await analyzeRouteRisk(fromVal, toVal);
       setRouteResult(data);
     } catch (e) {
-      console.error("Route analysis failed:", e);
+      console.error("Route analysis failed, using fallback:", e);
+      setRouteResult(generateRouteAnalysisFallback(fromVal, toVal));
     } finally {
       setRouteLoading(false);
     }
@@ -175,13 +182,13 @@ export default function LocationRiskSearch({ onLocationSelected = null }) {
           <div>
             <div className="flex items-center gap-2 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-1">
               <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>AI Multi-Hazard Risk Intelligence & Early Warning Grid</span>
+              <span>BHU-SURAKSHA · MULTI-HAZARD GEO-SPATIAL EARLY WARNING PLATFORM</span>
             </div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-              Location & Transport Corridor Intelligence
+            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+              Location Disaster Risk & Early Warning Intelligence
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Geotechnical terrain stability, probabilistic flood inundation, and corridor vulnerability assessment.
+              Search any location in India — state, district, city, village, or coordinates. Real-time AI terrain analysis, Richter scale seismology & historical disaster timelines.
             </p>
           </div>
 
